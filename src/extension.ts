@@ -203,6 +203,10 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
             padding: 20px;
             background-color: #f2f2f7;
             color: #333333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow-x: auto;
         }
         
         h1 {
@@ -289,11 +293,14 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
             box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
             position: relative;
             transition: all 0.3s ease;
+            flex-shrink: 0;
         }
         
         #device-bezel.device-phone {
             width: 430px;
             height: 880px;
+            min-width: 430px;
+            min-height: 880px;
         }
         
         #device-bezel.device-tablet {
@@ -1238,6 +1245,12 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
             <input type="number" id="custom-height" placeholder="Height" min="100" max="2000" value="880">
             <button id="apply-custom-size">Apply</button>
         </div>
+        <div style="margin-left: auto; display: flex; align-items: center; gap: 8px;">
+            <button id="zoom-out" title="Zoom Out" style="background: #ffffff; border: 1px solid #d1d1d6; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 16px;">−</button>
+            <button id="zoom-reset" title="Reset to 1:1" style="background: #ffffff; border: 1px solid #d1d1d6; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 11px;">1:1</button>
+            <button id="zoom-in" title="Zoom In" style="background: #ffffff; border: 1px solid #d1d1d6; border-radius: 4px; padding: 6px 12px; cursor: pointer; font-size: 16px;">+</button>
+            <span id="zoom-level" style="font-size: 11px; color: #8e8e93; margin-left: 4px;">100%</span>
+        </div>
     </div>
     <div id="device-wrapper">
         <div id="device-bezel" class="device-phone">
@@ -2057,6 +2070,35 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                 bezel.style.height = height + 'px';
                 
                 setTimeout(updateZoom, 100);
+            });
+            
+            // Zoom functionality
+            let currentZoom = 1.0;
+            const zoomStep = 0.1;
+            const minZoom = 0.5;
+            const maxZoom = 2.0;
+            
+            function setZoom(zoom) {
+                currentZoom = Math.max(minZoom, Math.min(maxZoom, zoom));
+                const wrapper = document.getElementById('device-wrapper');
+                const zoomLevel = document.getElementById('zoom-level');
+                
+                if (wrapper && zoomLevel) {
+                    wrapper.style.transform = 'scale(' + currentZoom + ')';
+                    zoomLevel.textContent = Math.round(currentZoom * 100) + '%';
+                }
+            }
+            
+            document.getElementById('zoom-in').addEventListener('click', () => {
+                setZoom(currentZoom + zoomStep);
+            });
+            
+            document.getElementById('zoom-out').addEventListener('click', () => {
+                setZoom(currentZoom - zoomStep);
+            });
+            
+            document.getElementById('zoom-reset').addEventListener('click', () => {
+                setZoom(1.0);
             });
             
             // Snapshot export handler

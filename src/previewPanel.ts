@@ -11,14 +11,14 @@ export function createPreviewPanel(context: vscode.ExtensionContext): vscode.Web
         currentPanel = undefined;
     }
 
-    // Create a new panel
+    // Create a new panel with unique ID to bust cache
     const panel = vscode.window.createWebviewPanel(
-        'swiftUIPreview',
+        'swiftUIPreviewV2',
         'SwiftUI CrossPreview',
         vscode.ViewColumn.Two,
         {
             enableScripts: true,
-            retainContextWhenHidden: true,
+            retainContextWhenHidden: false, // Don't retain to force fresh load
             localResourceRoots: [
                 vscode.Uri.joinPath(context.extensionUri, 'media')
             ]
