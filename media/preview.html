@@ -52,6 +52,7 @@
             padding: 8px 12px;
             background-color: #252526;
             border-radius: 4px;
+            align-items: center;
         }
         
         #toolbar button {
@@ -75,9 +76,34 @@
             color: #ffffff;
         }
         
+        .toolbar-divider {
+            width: 1px;
+            height: 24px;
+            background-color: #454545;
+            margin: 0 4px;
+        }
+        
+        .zoom-controls {
+            display: flex;
+            gap: 4px;
+            margin-left: auto;
+        }
+        
+        .zoom-controls button {
+            min-width: 32px;
+            padding: 6px 8px;
+        }
+        
+        #zoom-level {
+            font-size: 11px;
+            color: #808080;
+            margin-left: 8px;
+        }
+        
         #frame {
             margin: 0 auto;
-            transition: max-width 0.3s ease;
+            transition: transform 0.3s ease, max-width 0.3s ease;
+            transform-origin: top center;
         }
         
         .device-frame {
@@ -184,6 +210,13 @@
         <button data-device="phone" class="active">Phone</button>
         <button data-device="tablet">Tablet</button>
         <button data-device="desktop">Desktop</button>
+        <div class="toolbar-divider"></div>
+        <div class="zoom-controls">
+            <button id="zoom-out" title="Zoom Out">−</button>
+            <button id="zoom-reset" title="Reset to 1:1">1:1</button>
+            <button id="zoom-in" title="Zoom In">+</button>
+        </div>
+        <span id="zoom-level">100%</span>
     </div>
     <div id="errors"></div>
     <div id="frame" class="device-frame device-phone">
@@ -192,9 +225,25 @@
         </div>
     </div>
     
+    
     <script>
         (function() {
             const vscode = acquireVsCodeApi();
+            
+            // Wait for DOM to be ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
+            }
+            
+            function init() {
+                console.log('[SwiftUI Preview] DOM Ready - Initializing');
+                setupZoomControls();
+                setupDeviceButtons();
+                setupMessageHandler();
+                restoreState();
+            }
             
             // Client-side ViewNode renderer
             function renderToHtml(node) {
@@ -307,53 +356,99 @@
                 return '<div class="root">' + renderNode(node) + '</div>';
             }
             
-            window.addEventListener('message', event => {
-                const msg = event.data;
-                
-                if (msg.type === 'init') {
-                    // Initialize device selection
-                    const device = msg.device || 'phone';
-                    setDevice(device);
-                } else if (msg.type === 'render') {
-                    const rootEl = document.getElementById('root');
-                    const statusEl = document.getElementById('status');
-                    const errorEl = document.getElementById('error');
-                    const errorsEl = document.getElementById('errors');
+            function setupMessageHandler() {
+                window.addEventListener('message', event => {
+                    const msg = event.data;
                     
-                    // Update error display
-                    if (msg.error) {
-                        errorEl.textContent = msg.error;
-                        errorEl.style.display = 'inline';
-                    } else {
-                        errorEl.textContent = '';
-                        errorEl.style.display = 'none';
+                    if (msg.type === 'init') {
+                        const device = msg.device || 'phone';
+                        setDevice(device);
+                    } else if (msg.type === 'render') {
+                        const rootEl = document.getElementById('root');
+                        const statusEl = document.getElementById('status');
+                        const errorEl = document.getElementById('error');
+                        const errorsEl = document.getElementById('errors');
+                        
+                        if (msg.error) {
+                            errorEl.textContent = msg.error;
+                            errorEl.style.display = 'inline';
+                        } else {
+                            errorEl.textContent = '';
+                            errorEl.style.display = 'none';
+                        }
+                        
+                        errorsEl.innerHTML = msg.errorHtml || '';
+                        
+                        if (msg.root) {
+                            rootEl.innerHTML = renderToHtml(msg.root);
+                        } else if (msg.html) {
+                            rootEl.innerHTML = msg.html;
+                        } else {
+                            rootEl.innerHTML = '<div class="empty">No preview available</div>';
+                        }
+                        
+                        if (statusEl) {
+                            statusEl.textContent = 'Live · Last update: ' + new Date().toLocaleTimeString();
+                        }
                     }
-                    
-                    // Update error banner
-                    errorsEl.innerHTML = msg.errorHtml || '';
-                    
-                    // Update root content
-                    if (msg.root) {
-                        rootEl.innerHTML = renderToHtml(msg.root);
-                    } else if (msg.html) {
-                        rootEl.innerHTML = msg.html;
-                    } else {
-                        rootEl.innerHTML = '<div class="empty">No preview available</div>';
-                    }
-                    
-                    // Update status timestamp
-                    if (statusEl) {
-                        statusEl.textContent = 'Live · Last update: ' + new Date().toLocaleTimeString();
-                    }
-                }
-            });
+                });
+            }
             
-            // Device selection handling
+            // Zoom functionality
+            let currentZoom = 1.0;
+            const zoomStep = 0.1;
+            const minZoom = 0.5;
+            const maxZoom = 2.0;
+            
+            function updateZoom(zoom) {
+                currentZoom = Math.max(minZoom, Math.min(maxZoom, zoom));
+                const frame = document.getElementById('frame');
+                const zoomLevel = document.getElementById('zoom-level');
+                
+                if (frame && zoomLevel) {
+                    frame.style.transform = 'scale(' + currentZoom + ')';
+                    zoomLevel.textContent = Math.round(currentZoom * 100) + '%';
+                    
+                    const state = vscode.getState() || {};
+                    state.zoom = currentZoom;
+                    vscode.setState(state);
+                }
+            }
+            
+            function setupZoomControls() {
+                const zoomIn = document.getElementById('zoom-in');
+                const zoomOut = document.getElementById('zoom-out');
+                const zoomReset = document.getElementById('zoom-reset');
+                
+                if (zoomIn) {
+                    zoomIn.addEventListener('click', () => {
+                        console.log('[SwiftUI Preview] Zoom in clicked');
+                        updateZoom(currentZoom + zoomStep);
+                    });
+                }
+                
+                if (zoomOut) {
+                    zoomOut.addEventListener('click', () => {
+                        console.log('[SwiftUI Preview] Zoom out clicked');
+                        updateZoom(currentZoom - zoomStep);
+                    });
+                }
+                
+                if (zoomReset) {
+                    zoomReset.addEventListener('click', () => {
+                        console.log('[SwiftUI Preview] Zoom reset clicked');
+                        updateZoom(1.0);
+                    });
+                }
+            }
+            
+            // Device selection
             function setDevice(device) {
                 const frame = document.getElementById('frame');
-                frame.className = 'device-frame device-' + device;
+                if (frame) {
+                    frame.className = 'device-frame device-' + device;
+                }
                 
-                // Update button states
                 document.querySelectorAll('#toolbar button').forEach(btn => {
                     if (btn.dataset.device === device) {
                         btn.classList.add('active');
@@ -362,22 +457,32 @@
                     }
                 });
                 
-                // Persist selection
-                vscode.setState({ device: device });
+                const state = vscode.getState() || {};
+                state.device = device;
+                vscode.setState(state);
             }
             
-            // Restore previous device selection
-            const state = vscode.getState();
-            if (state && state.device) {
-                setDevice(state.device);
-            }
-            
-            // Add click handlers to device buttons
-            document.querySelectorAll('#toolbar button').forEach(btn => {
-                btn.addEventListener('click', () => {
-                    setDevice(btn.dataset.device);
+            function setupDeviceButtons() {
+                document.querySelectorAll('#toolbar button').forEach(btn => {
+                    if (btn.dataset.device) {
+                        btn.addEventListener('click', () => {
+                            setDevice(btn.dataset.device);
+                        });
+                    }
                 });
-            });
+            }
+            
+            function restoreState() {
+                const state = vscode.getState();
+                if (state) {
+                    if (state.device) {
+                        setDevice(state.device);
+                    }
+                    if (state.zoom) {
+                        updateZoom(state.zoom);
+                    }
+                }
+            }
         })();
     </script>
 </body>

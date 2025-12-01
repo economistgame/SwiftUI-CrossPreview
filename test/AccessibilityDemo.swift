@@ -25,7 +25,7 @@ struct AccessibilityDemo: View {
                         .foregroundColor(.gray)
                     
                     VStack(spacing: 12) {
-                        Button("❤️") {
+                        Button("Test Button") {
                             // Like action
                         }
                         .font(.title)

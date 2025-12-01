@@ -5,10 +5,10 @@ import * as fs from 'fs';
 let currentPanel: vscode.WebviewPanel | undefined = undefined;
 
 export function createPreviewPanel(context: vscode.ExtensionContext): vscode.WebviewPanel {
-    // If we already have a panel, show it
+    // If we already have a panel, dispose it and create a new one to force reload
     if (currentPanel) {
-        currentPanel.reveal(vscode.ViewColumn.Two);
-        return currentPanel;
+        currentPanel.dispose();
+        currentPanel = undefined;
     }
 
     // Create a new panel
@@ -56,6 +56,10 @@ function getHtmlContent(context: vscode.ExtensionContext, webview: vscode.Webvie
     
     try {
         let html = fs.readFileSync(htmlPath, 'utf8');
+        
+        // Add cache busting version
+        const version = Date.now();
+        html = html.replace('</head>', `<meta name="version" content="${version}"></head>`);
         
         // Replace placeholders with webview URIs if needed
         const mediaUri = webview.asWebviewUri(vscode.Uri.joinPath(context.extensionUri, 'media'));

@@ -799,7 +799,7 @@ function parseButton(node: any, source: string): ViewNode {
             }
         }
         
-        // Look for string literal label
+        // Look for string literal label (can be direct or inside value_argument)
         for (const arg of args.children) {
             if (arg.type === 'line_string_literal' || arg.type === 'string_literal') {
                 const text = arg.text.replace(/^"|"$/g, '');
@@ -810,6 +810,23 @@ function parseButton(node: any, source: string): ViewNode {
                     children: []
                 });
                 break;
+            }
+            
+            // Check inside value_argument for string literals
+            if (arg.type === 'value_argument') {
+                const stringLiteral = arg.children.find((c: any) => 
+                    c.type === 'line_string_literal' || c.type === 'string_literal'
+                );
+                if (stringLiteral) {
+                    const text = stringLiteral.text.replace(/^"|"$/g, '');
+                    children.push({
+                        kind: 'Text',
+                        props: { text },
+                        modifiers: [],
+                        children: []
+                    });
+                    break;
+                }
             }
         }
     }
@@ -2112,6 +2129,39 @@ function parseRegexView(content: string): ViewNode | null {
         return parseRegexForEach(content);
     }
     
+    // Match Button
+    const buttonMatch = content.match(/^Button\("([^"]+)"\)/);
+    if (buttonMatch) {
+        return {
+            kind: 'Button',
+            props: { action: 'action' },
+            modifiers: [],
+            children: [{
+                kind: 'Text',
+                props: { text: buttonMatch[1] },
+                modifiers: [],
+                children: []
+            }]
+        };
+    }
+    
+    // Match Button with closure label
+    const buttonClosureMatch = content.match(/^Button\s*\{/);
+    if (buttonClosureMatch) {
+        return parseRegexContainer(content, 'Button');
+    }
+    
+    // Match Toggle
+    const toggleMatch = content.match(/^Toggle\("([^"]+)"/);
+    if (toggleMatch) {
+        return {
+            kind: 'Toggle',
+            props: { label: toggleMatch[1], isOn: true },
+            modifiers: [],
+            children: []
+        };
+    }
+    
     // Match TextField
     const textFieldMatch = content.match(/^TextField\("([^"]+)"/);
     if (textFieldMatch) {
@@ -2247,7 +2297,7 @@ function parseRegexView(content: string): ViewNode | null {
 /**
  * Parse container views (VStack, HStack, ZStack, List, Form, ScrollView, NavigationView, TabView, etc.) with regex
  */
-function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStack" | "List" | "Form" | "ScrollView" | "LazyVStack" | "LazyHStack" | "LazyVGrid" | "LazyHGrid" | "Grid" | "Group" | "GeometryReader" | "NavigationView" | "NavigationStack" | "TabView" | "DisclosureGroup"): ViewNode {
+function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStack" | "List" | "Form" | "ScrollView" | "LazyVStack" | "LazyHStack" | "LazyVGrid" | "LazyHGrid" | "Grid" | "Group" | "GeometryReader" | "NavigationView" | "NavigationStack" | "TabView" | "DisclosureGroup" | "Button"): ViewNode {
     const stackProps: Record<string, any> = {};
     
     // Try to parse stack parameters (alignment, spacing) if applicable

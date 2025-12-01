@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';">
+    <title>SwiftUI CrossPreview</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+        }
+        
+        h1 {
+            color: #ffffff;
+            margin-bottom: 20px;
+            font-size: 18px;
+        }
+        
+        #header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding: 8px 12px;
+            background-color: #252526;
+            border-radius: 4px;
+        }
+        
+        #status {
+            color: #4ec9b0;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .error {
+            color: #f48771;
+            font-size: 12px;
+        }
+        
+        #errors {
+            margin-bottom: 16px;
+        }
+        
+        #toolbar {
+            display: flex;
+            gap: 8px;
+            margin-bottom: 16px;
+            padding: 8px 12px;
+            background-color: #252526;
+            border-radius: 4px;
+            align-items: center;
+        }
+        
+        #toolbar button {
+            background-color: #3c3c3c;
+            color: #d4d4d4;
+            border: 1px solid #454545;
+            border-radius: 4px;
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        #toolbar button:hover {
+            background-color: #505050;
+        }
+        
+        #toolbar button.active {
+            background-color: #0e639c;
+            border-color: #0e639c;
+            color: #ffffff;
+        }
+        
+        .toolbar-divider {
+            width: 1px;
+            height: 24px;
+            background-color: #454545;
+            margin: 0 4px;
+        }
+        
+        .zoom-controls {
+            display: flex;
+            gap: 4px;
+            margin-left: auto;
+        }
+        
+        .zoom-controls button {
+            min-width: 32px;
+            padding: 6px 8px;
+        }
+        
+        #zoom-level {
+            font-size: 11px;
+            color: #808080;
+            margin-left: 8px;
+        }
+        
+        #frame {
+            margin: 0 auto;
+            transition: transform 0.3s ease, max-width 0.3s ease;
+            transform-origin: top center;
+        }
+        
+        .device-frame {
+            background-color: #252526;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        .device-phone {
+            max-width: 390px;
+            border-radius: 24px;
+        }
+        
+        .device-tablet {
+            max-width: 768px;
+            border-radius: 24px;
+        }
+        
+        .device-desktop {
+            max-width: 1024px;
+            border-radius: 8px;
+        }
+        
+        .error-banner {
+            background-color: #5a1d1d;
+            border-left: 4px solid #f48771;
+            padding: 12px 16px;
+            border-radius: 4px;
+            color: #f48771;
+        }
+        
+        .error-banner strong {
+            display: block;
+            margin-bottom: 8px;
+            color: #ffffff;
+        }
+        
+        .error-banner ul {
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .error-banner li {
+            margin: 4px 0;
+        }
+        
+        #root {
+            background-color: #252526;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 300px;
+        }
+        
+        .status {
+            color: #808080;
+            font-style: italic;
+        }
+        
+        /* SwiftUI-style layout */
+        .root {
+          padding: 16px;
+          font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        }
+
+        .vstack {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .hstack {
+          display: flex;
+          flex-direction: row;
+          gap: 8px;
+        }
+
+        .text {
+          padding: 4px 8px;
+          border-radius: 4px;
+          background: #1e1e1e;
+          color: #f5f5f5;
+          font-size: 13px;
+        }
+
+        .image-placeholder {
+          padding: 8px;
+          border-radius: 4px;
+          border: 1px dashed #888;
+          font-size: 12px;
+        }
+        
+        .spacer {
+          flex: 1;
+        }
+    </style>
+</head>
+<body>
+    <h1>SwiftUI CrossPreview</h1>
+    <header id="header">
+        <span id="status">Live</span>
+        <span id="error" class="error" style="display:none;"></span>
+    </header>
+    <div id="toolbar">
+        <button data-device="phone" class="active">Phone</button>
+        <button data-device="tablet">Tablet</button>
+        <button data-device="desktop">Desktop</button>
+        <div class="toolbar-divider"></div>
+        <div class="zoom-controls">
+            <button id="zoom-out" title="Zoom Out">−</button>
+            <button id="zoom-reset" title="Reset to 1:1">1:1</button>
+            <button id="zoom-in" title="Zoom In">+</button>
+        </div>
+        <span id="zoom-level">100%</span>
+    </div>
+    <div id="errors"></div>
+    <div id="frame" class="device-frame device-phone">
+        <div id="root">
+            <p class="status">Waiting for Swift file content...</p>
+        </div>
+    </div>
+    
+    <script>
+        (function() {
+            const vscode = acquireVsCodeApi();
+            
+            // Wait for DOM to be ready
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', init);
+            } else {
+                init();
+            }
+            
+            function init() {
+                console.log('[SwiftUI Preview] DOM Ready - Initializing');
+                console.log('[SwiftUI Preview] Zoom controls element:', document.querySelector('.zoom-controls'));
+                console.log('[SwiftUI Preview] Toolbar element:', document.getElementById('toolbar'));
+                
+                setupZoomControls();
+                setupDeviceButtons();
+                setupMessageHandler();
+                restoreState();
+            }
+            
+            // Client-side ViewNode renderer
+            function renderToHtml(node) {
+                if (!node) return '';
+                
+                function buildStyle(n) {
+                    if (!n.modifiers || n.modifiers.length === 0) return '';
+                    
+                    const styles = [];
+                    
+                    for (const mod of n.modifiers) {
+                        switch (mod.name) {
+                            case 'padding':
+                                if (mod.args.all !== undefined) {
+                                    styles.push('padding: ' + mod.args.all + 'px');
+                                } else {
+                                    styles.push('padding: 8px');
+                                }
+                                break;
+                            case 'foregroundColor':
+                                if (mod.args.color) {
+                                    styles.push('color: ' + swiftColorToCss(mod.args.color));
+                                }
+                                break;
+                            case 'background':
+                                if (mod.args.color) {
+                                    styles.push('background-color: ' + swiftColorToCss(mod.args.color));
+                                }
+                                break;
+                            case 'font':
+                                if (mod.args.style) {
+                                    const font = swiftFontStyleToCss(mod.args.style);
+                                    styles.push('font-size: ' + font.fontSize);
+                                    styles.push('font-weight: ' + font.fontWeight);
+                                }
+                                break;
+                            case 'frame':
+                                if (mod.args.width !== undefined) {
+                                    styles.push('width: ' + mod.args.width + 'px');
+                                }
+                                if (mod.args.height !== undefined) {
+                                    styles.push('height: ' + mod.args.height + 'px');
+                                }
+                                break;
+                            case 'cornerRadius':
+                                if (mod.args.radius !== undefined) {
+                                    styles.push('border-radius: ' + mod.args.radius + 'px');
+                                }
+                                break;
+                        }
+                    }
+                    
+                    return styles.length > 0 ? ' style="' + styles.join('; ') + '"' : '';
+                }
+                
+                function swiftColorToCss(color) {
+                    const map = {
+                        'red': '#ff3b30', 'orange': '#ff9500', 'yellow': '#ffcc00',
+                        'green': '#34c759', 'mint': '#00c7be', 'teal': '#30b0c7',
+                        'cyan': '#32ade6', 'blue': '#007aff', 'indigo': '#5856d6',
+                        'purple': '#af52de', 'pink': '#ff2d55', 'brown': '#a2845e',
+                        'white': '#ffffff', 'gray': '#8e8e93', 'black': '#000000',
+                        'clear': 'transparent'
+                    };
+                    return map[color.toLowerCase()] || color;
+                }
+                
+                function swiftFontStyleToCss(style) {
+                    const map = {
+                        'largeTitle': { fontSize: '28px', fontWeight: 'bold' },
+                        'title': { fontSize: '22px', fontWeight: 'bold' },
+                        'title2': { fontSize: '20px', fontWeight: 'bold' },
+                        'title3': { fontSize: '18px', fontWeight: 'semibold' },
+                        'headline': { fontSize: '14px', fontWeight: 'semibold' },
+                        'body': { fontSize: '14px', fontWeight: 'normal' },
+                        'callout': { fontSize: '13px', fontWeight: 'normal' },
+                        'subheadline': { fontSize: '12px', fontWeight: 'normal' },
+                        'footnote': { fontSize: '11px', fontWeight: 'normal' },
+                        'caption': { fontSize: '10px', fontWeight: 'normal' },
+                        'caption2': { fontSize: '10px', fontWeight: 'normal' }
+                    };
+                    return map[style] || { fontSize: '14px', fontWeight: 'normal' };
+                }
+                
+                function renderNode(n) {
+                    const style = buildStyle(n);
+                    
+                    switch (n.kind) {
+                        case 'VStack':
+                            return '<div class="vstack"' + style + '>' + n.children.map(renderNode).join('') + '</div>';
+                        case 'HStack':
+                            return '<div class="hstack"' + style + '>' + n.children.map(renderNode).join('') + '</div>';
+                        case 'Text':
+                            return '<div class="text"' + style + '>' + escapeHtml(n.props.text || '') + '</div>';
+                        case 'Image':
+                            return '<div class="image-placeholder"' + style + '>' + escapeHtml(n.props.name || 'Image') + '</div>';
+                        case 'Spacer':
+                            return '<div class="spacer"' + style + '></div>';
+                        default:
+                            return '<div class="custom"' + style + '>' + escapeHtml(n.kind) + '</div>';
+                    }
+                }
+                
+                function escapeHtml(str) {
+                    return str.replace(/&/g, "&amp;")
+                              .replace(/</g, "&lt;")
+                              .replace(/>/g, "&gt;");
+                }
+                
+                return '<div class="root">' + renderNode(node) + '</div>';
+            }
+            
+            window.addEventListener('message', event => {
+                const msg = event.data;
+                
+                if (msg.type === 'init') {
+                    // Initialize device selection
+                    const device = msg.device || 'phone';
+                    setDevice(device);
+                } else if (msg.type === 'render') {
+                    const rootEl = document.getElementById('root');
+                    const statusEl = document.getElementById('status');
+                    const errorEl = document.getElementById('error');
+                    const errorsEl = document.getElementById('errors');
+                    
+                    // Update error display
+                    if (msg.error) {
+                        errorEl.textContent = msg.error;
+                        errorEl.style.display = 'inline';
+                    } else {
+                        errorEl.textContent = '';
+                        errorEl.style.display = 'none';
+                    }
+                    
+                    // Update error banner
+                    errorsEl.innerHTML = msg.errorHtml || '';
+                    
+                    // Update root content
+                    if (msg.root) {
+                        rootEl.innerHTML = renderToHtml(msg.root);
+                    } else if (msg.html) {
+                        rootEl.innerHTML = msg.html;
+                    } else {
+                        rootEl.innerHTML = '<div class="empty">No preview available</div>';
+                    }
+                    
+            // Zoom state
+            let currentZoom = 1.0;
+            const zoomStep = 0.1;
+            const minZoom = 0.5;
+            const maxZoom = 2.0;
+            
+            function updateZoom(zoom) {
+                currentZoom = Math.max(minZoom, Math.min(maxZoom, zoom));
+                const frame = document.getElementById('frame');
+                const zoomLevel = document.getElementById('zoom-level');
+                
+                frame.style.transform = 'scale(' + currentZoom + ')';
+                zoomLevel.textContent = Math.round(currentZoom * 100) + '%';
+                
+                // Persist zoom level
+                const state = vscode.getState() || {};
+                state.zoom = currentZoom;
+                vscode.setState(state);
+            }
+            
+            // Zoom controls
+            document.getElementById('zoom-in').addEventListener('click', () => {
+                updateZoom(currentZoom + zoomStep);
+            });
+            
+            document.getElementById('zoom-out').addEventListener('click', () => {
+                updateZoom(currentZoom - zoomStep);
+            });
+            
+            document.getElementById('zoom-reset').addEventListener('click', () => {
+                updateZoom(1.0);
+            });
+            
+            // Device selection handling
+            function setDevice(device) {
+                const frame = document.getElementById('frame');
+                if (frame) {
+                    frame.className = 'device-frame device-' + device;
+                }
+                
+                // Update button states
+                document.querySelectorAll('#toolbar button').forEach(btn => {
+                    if (btn.dataset.device === device) {
+                        btn.classList.add('active');
+                    } else {
+                        btn.classList.remove('active');
+                    }
+                });
+                
+                // Persist selection
+                const state = vscode.getState() || {};
+                state.device = device;
+                vscode.setState(state);
+            }
+            
+            function setupDeviceButtons() {
+                // Add click handlers to device buttons
+                document.querySelectorAll('#toolbar button').forEach(btn => {
+                    if (btn.dataset.device) {
+                        btn.addEventListener('click', () => {
+                            setDevice(btn.dataset.device);
+                        });
+                    }
+                });
+            }
+            
+            function restoreState() {
+                // Restore previous state
+                const state = vscode.getState();
+                if (state) {
+                    if (state.device) {
+                        setDevice(state.device);
+                    }
+                    if (state.zoom) {
+                        updateZoom(state.zoom);
+                    }
+                }
+            }
+            
+            // Add click handlers to device buttons
+            document.querySelectorAll('#toolbar button').forEach(btn => {
+                btn.addEventListener('click', () => {
+                    setDevice(btn.dataset.device);
+                });
+            });
+        })();
+    </script>
+</body>
+</html>

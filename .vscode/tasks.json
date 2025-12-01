@@ -1,0 +1,24 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "type": "npm",
+            "script": "build",
+            "problemMatcher": [],
+            "label": "npm: build",
+            "detail": "node esbuild.config.js",
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "type": "npm",
+            "script": "watch",
+            "problemMatcher": [],
+            "label": "npm: watch",
+            "detail": "node esbuild.config.js --watch",
+            "isBackground": true
+        }
+    ]
+}
