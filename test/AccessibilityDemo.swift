@@ -77,14 +77,14 @@ struct AccessibilityDemo: View {
                         .foregroundColor(.gray)
                     
                     VStack(spacing: 12) {
-                        Button("Next") {
+                        Button("NEXT") {
                             // Navigation
                         }
                         .padding()
                         .frame(maxWidth: .infinity)
                         .background(.blue)
-                        .foregroundColor(.white)
-                        .cornerRadius(12)
+                        .foregroundColor(.black)
+                        .cornerRadius(10)
                         .accessibilityLabel("Next button")
                         .accessibilityHint("Navigates to the next page")
                         
@@ -127,9 +127,10 @@ struct AccessibilityDemo: View {
                     
                     VStack(spacing: 12) {
                         VStack(alignment: .leading) {
-                            Text("Volume: 75%")
+                            Text("Volume: 7%")
                                 .font(.subheadline)
-                            Slider(value: 75, in: 0...100)
+                            Slider(value: 7, in: 0...10)
+                                //.padding(.horizontal)
                                 .accessibilityLabel("Volume slider")
                                 .accessibilityValue("75 percent")
                         }

@@ -21,22 +21,22 @@ struct AdvancedModifiersDemo: View {
                     ZStack {
                         Rectangle()
                             .fill(.ultraThinMaterial)
-                            .frame(width: 300, height: 200)
-                            .cornerRadius(12)
+                            .frame(width: 300, height: 100)
+                            .cornerRadius(15)
                         
                         Circle()
                             .fill(.red)
-                            .frame(width: 40, height: 40)
+                            .frame(width: 10, height: 10)
                             .position(x: 50, y: 50)
                         
                         Circle()
                             .fill(.blue)
-                            .frame(width: 40, height: 40)
-                            .position(x: 250, y: 50)
+                            .frame(width: 60, height: 60)
+                            .position(x: 50, y: 40)
                         
                         Circle()
-                            .fill(.green)
-                            .frame(width: 40, height: 40)
+                            .fill(.red)
+                            .frame(width: 50, height: 50)
                             .position(x: 150, y: 150)
                     }
                     .padding()

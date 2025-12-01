@@ -130,14 +130,14 @@ function parseWithTreeSitter(source: string): ParseResult {
 /**
  * Extract @State, @Binding, and other property wrappers from a View struct
  */
-function extractStateProperties(structNode: any): Array<{name: string, type: string, valueType?: string, initialValue?: any}> {
-    const properties: Array<{name: string, type: string, valueType?: string, initialValue?: any}> = [];
+function extractStateProperties(structNode: any): Array<{name: string, type: "State" | "Binding" | "StateObject" | "ObservedObject" | "EnvironmentObject" | "Environment", valueType?: string, initialValue?: any}> {
+    const properties: Array<{name: string, type: "State" | "Binding" | "StateObject" | "ObservedObject" | "EnvironmentObject" | "Environment", valueType?: string, initialValue?: any}> = [];
     
     for (const child of structNode.children) {
         if (child.type === 'property_declaration' || child.type === 'variable_declaration') {
             // Look for modifiers (attributes) like @State, @Binding
-            const modifiers = child.children.filter(c => c.type === 'modifiers' || c.type === 'attribute');
-            let propertyWrapperType: string | null = null;
+            const modifiers = child.children.filter((c: any) => c.type === 'modifiers' || c.type === 'attribute');
+            let propertyWrapperType: "State" | "Binding" | "StateObject" | "ObservedObject" | "EnvironmentObject" | "Environment" | null = null;
             
             for (const modifier of modifiers) {
                 const text = modifier.text;
@@ -151,21 +151,21 @@ function extractStateProperties(structNode: any): Array<{name: string, type: str
             
             if (propertyWrapperType) {
                 // Extract property name
-                const patternNode = child.children.find(c => c.type === 'pattern' || c.type === 'simple_identifier');
-                const nameNode = patternNode?.children?.find(c => c.type === 'simple_identifier') || patternNode;
+                const patternNode = child.children.find((c: any) => c.type === 'pattern' || c.type === 'simple_identifier');
+                const nameNode = patternNode?.children?.find((c: any) => c.type === 'simple_identifier') || patternNode;
                 const propertyName = nameNode?.text || 'unknown';
                 
                 // Extract type annotation if present
-                const typeAnnotation = child.children.find(c => c.type === 'type_annotation');
+                const typeAnnotation = child.children.find((c: any) => c.type === 'type_annotation');
                 let valueType: string | undefined;
                 if (typeAnnotation) {
-                    const typeNode = typeAnnotation.children.find(c => c.type !== ':');
+                    const typeNode = typeAnnotation.children.find((c: any) => c.type !== ':');
                     valueType = typeNode?.text;
                 }
                 
                 // Extract initial value if present
                 let initialValue: any;
-                const equalityNode = child.children.find(c => c.type === 'equal_sign' || c.text === '=');
+                const equalityNode = child.children.find((c: any) => c.type === 'equal_sign' || c.text === '=');
                 if (equalityNode) {
                     const valueIndex = child.children.indexOf(equalityNode) + 1;
                     if (valueIndex < child.children.length) {
@@ -213,7 +213,7 @@ function extractInitialValue(node: any): any {
 function findViewStruct(node: any): any {
     if (node.type === 'class_declaration' || node.type === 'struct_declaration') {
         // Check if it has "View" in type inheritance
-        const inheritanceClause = node.children.find(c => c.type === 'type_inheritance_clause');
+        const inheritanceClause = node.children.find((c: any) => c.type === 'type_inheritance_clause');
         if (inheritanceClause) {
             const text = inheritanceClause.text;
             if (text.includes('View')) {
@@ -240,7 +240,7 @@ function findBodyProperty(structNode: any): any {
     // Look for computed_property or variable_declaration named "body"
     for (const child of structNode.children) {
         if (child.type === 'computed_property' || child.type === 'variable_declaration') {
-            const nameNode = child.children.find(c => c.type === 'simple_identifier' || c.type === 'pattern');
+            const nameNode = child.children.find((c: any) => c.type === 'simple_identifier' || c.type === 'pattern');
             if (nameNode && nameNode.text === 'body') {
                 return child;
             }
@@ -260,7 +260,7 @@ function findBodyExpression(bodyNode: any): any {
             for (const getterChild of child.children) {
                 if (getterChild.type === 'statements') {
                     // Get first statement
-                    const statement = getterChild.children.find(c => c.type !== '{' && c.type !== '}');
+                    const statement = getterChild.children.find((c: any) => c.type !== '{' && c.type !== '}');
                     if (statement) {
                         return statement;
                     }
@@ -305,7 +305,7 @@ function parseViewExpression(node: any, source: string): ViewNode | null {
  * Parse a call expression (e.g., VStack { ... }, Text("Hello"))
  */
 function parseCallExpression(node: any, source: string): ViewNode | null {
-    const functionNode = node.children.find(c => c.type === 'simple_identifier' || c.type === 'navigation_expression');
+    const functionNode = node.children.find((c: any) => c.type === 'simple_identifier' || c.type === 'navigation_expression');
     const functionName = functionNode?.text || '';
     
     // Handle container views: VStack, HStack, ZStack
@@ -315,13 +315,13 @@ function parseCallExpression(node: any, source: string): ViewNode | null {
         const children: ViewNode[] = [];
 
         // Look for closure argument with children
-        const args = node.children.find(c => c.type === 'call_suffix' || c.type === 'lambda_literal');
+        const args = node.children.find((c: any) => c.type === 'call_suffix' || c.type === 'lambda_literal');
         if (args) {
             // Parse alignment and spacing from value_arguments
-            const valueArgs = args.children.filter(c => c.type === 'value_argument');
+            const valueArgs = args.children.filter((c: any) => c.type === 'value_argument');
             for (const valueArg of valueArgs) {
-                const label = valueArg.children.find(c => c.type === 'value_argument_label');
-                const value = valueArg.children.find(c => 
+                const label = valueArg.children.find((c: any) => c.type === 'value_argument_label');
+                const value = valueArg.children.find((c: any) => 
                     c.type === 'navigation_expression' || 
                     c.type === 'integer_literal' ||
                     c.type === 'float_literal'
@@ -366,7 +366,7 @@ function parseCallExpression(node: any, source: string): ViewNode | null {
 
     // Handle Text("...")
     if (functionName === 'Text') {
-        const args = node.children.find(c => c.type === 'call_suffix');
+        const args = node.children.find((c: any) => c.type === 'call_suffix');
         let text = '';
         
         if (args) {
@@ -390,7 +390,7 @@ function parseCallExpression(node: any, source: string): ViewNode | null {
 
     // Handle Image("...")
     if (functionName === 'Image') {
-        const args = node.children.find(c => c.type === 'call_suffix');
+        const args = node.children.find((c: any) => c.type === 'call_suffix');
         let name = '';
         
         if (args) {
@@ -425,14 +425,14 @@ function parseCallExpression(node: any, source: string): ViewNode | null {
         const props: Record<string, any> = {};
         const children: ViewNode[] = [];
         
-        const args = node.children.find(c => c.type === 'call_suffix' || c.type === 'lambda_literal');
+        const args = node.children.find((c: any) => c.type === 'call_suffix' || c.type === 'lambda_literal');
         if (args) {
             // Look for header argument
-            const valueArgs = args.children.filter(c => c.type === 'value_argument');
+            const valueArgs = args.children.filter((c: any) => c.type === 'value_argument');
             for (const valueArg of valueArgs) {
-                const label = valueArg.children.find(c => c.type === 'value_argument_label');
+                const label = valueArg.children.find((c: any) => c.type === 'value_argument_label');
                 if (label && label.text.includes('header')) {
-                    const headerExpr = valueArg.children.find(c => 
+                    const headerExpr = valueArg.children.find((c: any) => 
                         c.type === 'call_expression' || c.type === 'postfix_expression'
                     );
                     if (headerExpr) {
@@ -657,7 +657,7 @@ function parseCallExpression(node: any, source: string): ViewNode | null {
  */
 function parseContainerView(node: any, kind: "List" | "Form" | "ScrollView" | "LazyVStack" | "LazyHStack" | "LazyVGrid" | "LazyHGrid" | "Grid" | "Group" | "GeometryReader", source: string): ViewNode {
     const children: ViewNode[] = [];
-    const args = node.children.find(c => c.type === 'call_suffix' || c.type === 'lambda_literal');
+    const args = node.children.find((c: any) => c.type === 'call_suffix' || c.type === 'lambda_literal');
     
     if (args) {
         for (const arg of args.children) {
@@ -688,11 +688,11 @@ function parseForEach(node: any, source: string): ViewNode {
     const props: Record<string, any> = {};
     let rowTemplate: ViewNode | null = null;
     
-    const args = node.children.find(c => c.type === 'call_suffix');
+    const args = node.children.find((c: any) => c.type === 'call_suffix');
     
     if (args) {
         // Look for the first argument (range or array)
-        const valueArgs = args.children.filter(c => 
+        const valueArgs = args.children.filter((c: any) => 
             c.type === 'value_argument' || 
             c.type === 'binary_expression' ||
             c.type === 'array_literal' ||
@@ -717,12 +717,12 @@ function parseForEach(node: any, source: string): ViewNode {
                 const arrayText = arg.text || '';
                 const stringMatches = arrayText.match(/"([^"]+)"/g);
                 if (stringMatches && stringMatches.length > 0) {
-                    props.forEachItems = stringMatches.map(s => s.replace(/"/g, ''));
+                    props.forEachItems = stringMatches.map((s: string) => s.replace(/"/g, ''));
                     break;
                 }
                 // Check for property reference like "cards" or "items"
                 if (arg.type === 'value_argument') {
-                    const valueArg = arg.children.find(c => c.type === 'simple_identifier');
+                    const valueArg = arg.children.find((c: any) => c.type === 'simple_identifier');
                     if (valueArg) {
                         const propName = valueArg.text;
                         // Generate placeholder items
@@ -1384,7 +1384,7 @@ function parseMenu(node: any, source: string): ViewNode {
  */
 function parseNavigationView(node: any, source: string): ViewNode {
     const children: ViewNode[] = [];
-    const args = node.children.find(c => c.type === 'call_suffix');
+    const args = node.children.find((c: any) => c.type === 'call_suffix');
     
     if (args) {
         for (const arg of args.children) {
@@ -1413,7 +1413,7 @@ function parseNavigationView(node: any, source: string): ViewNode {
  */
 function parseNavigationStack(node: any, source: string): ViewNode {
     const children: ViewNode[] = [];
-    const args = node.children.find(c => c.type === 'call_suffix');
+    const args = node.children.find((c: any) => c.type === 'call_suffix');
     
     if (args) {
         for (const arg of args.children) {
@@ -1494,7 +1494,7 @@ function parseNavigationLink(node: any, source: string): ViewNode {
  */
 function parseTabView(node: any, source: string): ViewNode {
     const children: ViewNode[] = [];
-    const args = node.children.find(c => c.type === 'call_suffix');
+    const args = node.children.find((c: any) => c.type === 'call_suffix');
     
     if (args) {
         for (const arg of args.children) {
@@ -1612,7 +1612,7 @@ function parseDisclosureGroup(node: any, source: string): ViewNode {
  */
 function parsePostfixExpression(node: any, source: string): ViewNode | null {
     // Find the base expression
-    const baseExpr = node.children.find(c => 
+    const baseExpr = node.children.find((c: any) => 
         c.type === 'call_expression' || 
         c.type === 'postfix_expression' ||
         c.type === 'simple_identifier'
@@ -1656,7 +1656,7 @@ function parseModifier(callSuffix: any): Modifier | null {
     
     for (const child of callSuffix.children) {
         if (child.type === 'navigation_suffix') {
-            const identifier = child.children.find(c => c.type === 'simple_identifier');
+            const identifier = child.children.find((c: any) => c.type === 'simple_identifier');
             if (identifier) {
                 modifierName = identifier.text;
                 break;
@@ -1672,14 +1672,14 @@ function parseModifier(callSuffix: any): Modifier | null {
     const args: Record<string, any> = {};
     
     // Find argument list
-    const argList = callSuffix.children.find(c => 
+    const argList = callSuffix.children.find((c: any) => 
         c.type === 'value_arguments' || 
         c.type === 'argument_list' ||
         c.type === 'tuple_expression'
     );
     
     if (argList) {
-        const argNodes = argList.children.filter(c => 
+        const argNodes = argList.children.filter((c: any) => 
             c.type === 'value_argument' || 
             c.type === 'simple_identifier' ||
             c.type === 'integer_literal' ||
@@ -1704,8 +1704,8 @@ function parseModifier(callSuffix: any): Modifier | null {
 function parseModifierArgument(node: any, args: Record<string, any>, modifierName: string) {
     // Handle labeled arguments like width: 200
     if (node.type === 'value_argument') {
-        const label = node.children.find(c => c.type === 'value_argument_label');
-        const value = node.children.find(c => 
+        const label = node.children.find((c: any) => c.type === 'value_argument_label');
+        const value = node.children.find((c: any) => 
             c.type === 'integer_literal' || 
             c.type === 'float_literal' ||
             c.type === 'navigation_expression' ||
@@ -1764,10 +1764,10 @@ function parseModifierArgument(node: any, args: Record<string, any>, modifierNam
     }
     // Handle Color.blue style and overlay content
     else if (node.type === 'call_expression') {
-        const typeName = node.children.find(c => c.type === 'simple_identifier' || c.type === 'navigation_expression');
+        const typeName = node.children.find((c: any) => c.type === 'simple_identifier' || c.type === 'navigation_expression');
         if (typeName && typeName.text === 'Color') {
             // Look for Color.xxx pattern
-            const colorExpr = node.children.find(c => c.type === 'navigation_expression');
+            const colorExpr = node.children.find((c: any) => c.type === 'navigation_expression');
             if (colorExpr) {
                 const colorName = extractEnumValue(colorExpr);
                 if (colorName && modifierName === 'background') {
@@ -1950,7 +1950,7 @@ function extractEnumValue(node: any): string | null {
     }
     
     // Try to find the last identifier in navigation
-    const identifiers = node.children.filter(c => c.type === 'simple_identifier');
+    const identifiers = node.children.filter((c: any) => c.type === 'simple_identifier');
     if (identifiers.length > 0) {
         return identifiers[identifiers.length - 1].text;
     }
@@ -1965,7 +1965,7 @@ function extractModifierName(node: any): string | null {
     // Look for navigation_suffix or simple identifier
     for (const child of node.children) {
         if (child.type === 'navigation_suffix') {
-            const identifier = child.children.find(c => c.type === 'simple_identifier');
+            const identifier = child.children.find((c: any) => c.type === 'simple_identifier');
             if (identifier) {
                 return identifier.text;
             }
@@ -2225,6 +2225,18 @@ function parseRegexView(content: string): ViewNode | null {
     
     // Match Slider
     if (content.startsWith('Slider(')) {
+        const sliderMatch = content.match(/^Slider\([^)]*\)/);
+        if (sliderMatch) {
+            // Extract value and range: Slider(value: 7, in: 0...10)
+            const valueMatch = sliderMatch[0].match(/value:\s*([\d.]+)/);
+            const rangeMatch = sliderMatch[0].match(/in:\s*([\d.]+)\.{2,3}([\d.]+)/);
+            
+            const value = valueMatch ? parseFloat(valueMatch[1]) : 0.5;
+            const min = rangeMatch ? parseFloat(rangeMatch[1]) : 0;
+            const max = rangeMatch ? parseFloat(rangeMatch[2]) : 1;
+            
+            return { kind: 'Slider', props: { value, range: [min, max] }, modifiers: [], children: [] };
+        }
         return { kind: 'Slider', props: { value: 0.5, range: [0, 1] }, modifiers: [], children: [] };
     }
     
@@ -2434,6 +2446,366 @@ function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStac
             });
             
             pos += currentPos;
+        } else if (remaining.startsWith('Button')) {
+            // Parse Button with modifiers
+            const buttonMatch = remaining.match(/^Button\("([^"]+)"\)\s*\{/);
+            if (buttonMatch) {
+                const buttonText = buttonMatch[1];
+                let currentPos = buttonMatch[0].length;
+                
+                // Find end of closure
+                let braceCount = 1;
+                while (braceCount > 0 && currentPos < remaining.length) {
+                    if (remaining[currentPos] === '{') braceCount++;
+                    if (remaining[currentPos] === '}') braceCount--;
+                    currentPos++;
+                }
+                
+                // Parse modifiers after the button
+                const modifiers: Modifier[] = [];
+                while (currentPos < remaining.length) {
+                    const modRemaining = remaining.substring(currentPos).trim();
+                    if (!modRemaining.startsWith('.')) break;
+                    
+                    const modMatch = modRemaining.match(/^\.(\w+)\(([^)]*)\)/);
+                    if (modMatch) {
+                        const modName = modMatch[1];
+                        const modArgs = modMatch[2];
+                        const args: Record<string, any> = {};
+                        
+                        if (modName === 'padding' && modArgs) {
+                            const num = parseFloat(modArgs);
+                            if (!isNaN(num)) args.all = num;
+                        } else if (modName === 'font' && modArgs) {
+                            const fontMatch = modArgs.match(/\.(\w+)/);
+                            if (fontMatch) args.style = fontMatch[1];
+                        } else if (modName === 'foregroundColor' && modArgs) {
+                            const colorMatch = modArgs.match(/\.(\w+)/);
+                            if (colorMatch) args.color = colorMatch[1];
+                        } else if (modName === 'background' && modArgs) {
+                            const colorMatch = modArgs.match(/\.(\w+)/);
+                            if (colorMatch) args.color = colorMatch[1];
+                        } else if (modName === 'cornerRadius' && modArgs) {
+                            const num = parseFloat(modArgs);
+                            if (!isNaN(num)) args.radius = num;
+                        } else if (modName === 'frame' && modArgs) {
+                            const widthMatch = modArgs.match(/width:\s*(\d+)/);
+                            const heightMatch = modArgs.match(/height:\s*(\d+)/);
+                            if (widthMatch) args.width = parseInt(widthMatch[1]);
+                            if (heightMatch) args.height = parseInt(heightMatch[1]);
+                        }
+                        
+                        modifiers.push({ name: modName, args });
+                        currentPos += remaining.substring(currentPos).indexOf(modMatch[0]) + modMatch[0].length;
+                    } else {
+                        break;
+                    }
+                }
+                
+                children.push({
+                    kind: 'Button',
+                    props: { action: 'action' },
+                    modifiers,
+                    children: [{
+                        kind: 'Text',
+                        props: { text: buttonText },
+                        modifiers: [],
+                        children: []
+                    }]
+                });
+                
+                pos += currentPos;
+            } else {
+                // Not a valid button, skip ahead
+                pos += 6; // length of "Button"
+            }
+        } else if (remaining.startsWith('Divider()')) {
+            children.push({ kind: 'Divider', props: {}, modifiers: [], children: [] });
+            pos += skipModifiers(remaining, 9);
+        } else if (remaining.startsWith('Spacer()')) {
+            children.push({ kind: 'Spacer', props: {}, modifiers: [], children: [] });
+            pos += skipModifiers(remaining, 8);
+        } else if (remaining.startsWith('Rectangle()')) {
+            let currentPos = 11; // length of "Rectangle()"
+            const modifiers: Modifier[] = [];
+            
+            // Parse modifiers
+            while (currentPos < remaining.length) {
+                const modRemaining = remaining.substring(currentPos).trim();
+                const whitespaceSkip = remaining.substring(currentPos).indexOf(modRemaining[0]);
+                currentPos += whitespaceSkip;
+                
+                if (!modRemaining.startsWith('.')) break;
+                
+                const modMatch = modRemaining.match(/^\.(\w+)(\(([^)]*)\))?/);
+                if (modMatch) {
+                    const modName = modMatch[1];
+                    const modArgs = modMatch[3] || '';
+                    const args: Record<string, any> = {};
+                    
+                    if (modName === 'fill') {
+                        const colorMatch = modArgs.match(/\.(\w+)/);
+                        if (colorMatch) args.color = colorMatch[1];
+                    } else if (modName === 'frame') {
+                        const widthMatch = modArgs.match(/width:\s*(\d+)/);
+                        const heightMatch = modArgs.match(/height:\s*(\d+)/);
+                        if (widthMatch) args.width = parseInt(widthMatch[1]);
+                        if (heightMatch) args.height = parseInt(heightMatch[1]);
+                    } else if (modName === 'cornerRadius') {
+                        const num = parseFloat(modArgs);
+                        if (!isNaN(num)) args.radius = num;
+                    } else if (modName === 'position') {
+                        const xMatch = modArgs.match(/x:\s*(\d+)/);
+                        const yMatch = modArgs.match(/y:\s*(\d+)/);
+                        if (xMatch) args.x = parseInt(xMatch[1]);
+                        if (yMatch) args.y = parseInt(yMatch[1]);
+                    }
+                    
+                    modifiers.push({ name: modName, args });
+                    currentPos += modMatch[0].length;
+                } else {
+                    break;
+                }
+            }
+            
+            children.push({ kind: 'Rectangle', props: {}, modifiers, children: [] });
+            pos += currentPos;
+        } else if (remaining.startsWith('Circle()')) {
+            let currentPos = 8; // length of "Circle()"
+            const modifiers: Modifier[] = [];
+            
+            // Parse modifiers
+            while (currentPos < remaining.length) {
+                const modRemaining = remaining.substring(currentPos).trim();
+                const whitespaceSkip = remaining.substring(currentPos).indexOf(modRemaining[0]);
+                currentPos += whitespaceSkip;
+                
+                if (!modRemaining.startsWith('.')) break;
+                
+                const modMatch = modRemaining.match(/^\.(\w+)(\(([^)]*)\))?/);
+                if (modMatch) {
+                    const modName = modMatch[1];
+                    const modArgs = modMatch[3] || '';
+                    const args: Record<string, any> = {};
+                    
+                    if (modName === 'fill') {
+                        const colorMatch = modArgs.match(/\.(\w+)/);
+                        if (colorMatch) args.color = colorMatch[1];
+                    } else if (modName === 'frame') {
+                        const widthMatch = modArgs.match(/width:\s*(\d+)/);
+                        const heightMatch = modArgs.match(/height:\s*(\d+)/);
+                        if (widthMatch) args.width = parseInt(widthMatch[1]);
+                        if (heightMatch) args.height = parseInt(heightMatch[1]);
+                    } else if (modName === 'position') {
+                        const xMatch = modArgs.match(/x:\s*(\d+)/);
+                        const yMatch = modArgs.match(/y:\s*(\d+)/);
+                        if (xMatch) args.x = parseInt(xMatch[1]);
+                        if (yMatch) args.y = parseInt(yMatch[1]);
+                    }
+                    
+                    modifiers.push({ name: modName, args });
+                    currentPos += modMatch[0].length;
+                } else {
+                    break;
+                }
+            }
+            
+            children.push({ kind: 'Circle', props: {}, modifiers, children: [] });
+            pos += currentPos;
+        } else if (remaining.startsWith('Capsule()')) {
+            const capsuleView = parseRegexView(remaining);
+            if (capsuleView) children.push(capsuleView);
+            pos += skipModifiers(remaining, 9);
+        } else if (remaining.startsWith('Ellipse()')) {
+            const ellipseView = parseRegexView(remaining);
+            if (ellipseView) children.push(ellipseView);
+            pos += skipModifiers(remaining, 9);
+        } else if (remaining.match(/^RoundedRectangle\(cornerRadius:\s*\d+\)/)) {
+            const rrView = parseRegexView(remaining);
+            if (rrView) children.push(rrView);
+            const rrMatch = remaining.match(/^RoundedRectangle\(cornerRadius:\s*\d+\)/);
+            if (rrMatch) pos += skipModifiers(remaining, rrMatch[0].length);
+        } else if (remaining.match(/^Image\("/)) {
+            const imgMatch = remaining.match(/^Image\("([^"]+)"\)/);
+            if (imgMatch) {
+                children.push({ kind: 'Image', props: { name: imgMatch[1] }, modifiers: [], children: [] });
+                pos += skipModifiers(remaining, imgMatch[0].length);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^Toggle\("/)) {
+            const toggleMatch = remaining.match(/^Toggle\("([^"]+)"/);
+            if (toggleMatch) {
+                children.push({ kind: 'Toggle', props: { label: toggleMatch[1], isOn: true }, modifiers: [], children: [] });
+                // Find the closing paren for Toggle
+                let toggleEnd = toggleMatch[0].length;
+                while (toggleEnd < remaining.length && remaining[toggleEnd] !== ')') {
+                    toggleEnd++;
+                }
+                if (remaining[toggleEnd] === ')') toggleEnd++;
+                pos += skipModifiers(remaining, toggleEnd);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^TextField\("/)) {
+            const tfMatch = remaining.match(/^TextField\("([^"]+)"/);
+            if (tfMatch) {
+                children.push({ kind: 'TextField', props: { placeholder: tfMatch[1], text: '' }, modifiers: [], children: [] });
+                // Find the closing paren
+                let tfEnd = tfMatch[0].length;
+                while (tfEnd < remaining.length && remaining[tfEnd] !== ')') {
+                    tfEnd++;
+                }
+                if (remaining[tfEnd] === ')') tfEnd++;
+                pos += skipModifiers(remaining, tfEnd);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^SecureField\("/)) {
+            const sfMatch = remaining.match(/^SecureField\("([^"]+)"/);
+            if (sfMatch) {
+                children.push({ kind: 'SecureField', props: { placeholder: sfMatch[1], text: '' }, modifiers: [], children: [] });
+                // Find the closing paren
+                let sfEnd = sfMatch[0].length;
+                while (sfEnd < remaining.length && remaining[sfEnd] !== ')') {
+                    sfEnd++;
+                }
+                if (remaining[sfEnd] === ')') sfEnd++;
+                pos += skipModifiers(remaining, sfEnd);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^Label\("/)) {
+            const lblMatch = remaining.match(/^Label\("([^"]+)",\s*systemImage:\s*"([^"]+)"\)/);
+            if (lblMatch) {
+                children.push({ kind: 'Label', props: { title: lblMatch[1], systemImage: lblMatch[2] }, modifiers: [], children: [] });
+                pos += skipModifiers(remaining, lblMatch[0].length);
+            } else {
+                pos++;
+            }
+        } else if (remaining.startsWith('Slider(')) {
+            const sliderMatch = remaining.match(/^Slider\([^)]*\)/);
+            if (sliderMatch) {
+                // Extract value and range: Slider(value: 7, in: 0...10)
+                const valueMatch = sliderMatch[0].match(/value:\s*([\d.]+)/);
+                const rangeMatch = sliderMatch[0].match(/in:\s*([\d.]+)\.{2,3}([\d.]+)/);
+                
+                const value = valueMatch ? parseFloat(valueMatch[1]) : 0.5;
+                const min = rangeMatch ? parseFloat(rangeMatch[1]) : 0;
+                const max = rangeMatch ? parseFloat(rangeMatch[2]) : 1;
+                
+                children.push({ kind: 'Slider', props: { value, range: [min, max] }, modifiers: [], children: [] });
+                pos += skipModifiers(remaining, sliderMatch[0].length);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^Stepper\("/)) {
+            const stepMatch = remaining.match(/^Stepper\("([^"]+)"/);
+            if (stepMatch) {
+                children.push({ kind: 'Stepper', props: { label: stepMatch[1], value: 0 }, modifiers: [], children: [] });
+                // Find the closing paren
+                let stepEnd = stepMatch[0].length;
+                while (stepEnd < remaining.length && remaining[stepEnd] !== ')') {
+                    stepEnd++;
+                }
+                if (remaining[stepEnd] === ')') stepEnd++;
+                pos += skipModifiers(remaining, stepEnd);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^DatePicker\("/)) {
+            const dpMatch = remaining.match(/^DatePicker\("([^"]+)"/);
+            if (dpMatch) {
+                children.push({ kind: 'DatePicker', props: { label: dpMatch[1] }, modifiers: [], children: [] });
+                // Find the closing paren
+                let dpEnd = dpMatch[0].length;
+                while (dpEnd < remaining.length && remaining[dpEnd] !== ')') {
+                    dpEnd++;
+                }
+                if (remaining[dpEnd] === ')') dpEnd++;
+                pos += skipModifiers(remaining, dpEnd);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^ColorPicker\("/)) {
+            const cpMatch = remaining.match(/^ColorPicker\("([^"]+)"/);
+            if (cpMatch) {
+                children.push({ kind: 'ColorPicker', props: { label: cpMatch[1] }, modifiers: [], children: [] });
+                // Find the closing paren
+                let cpEnd = cpMatch[0].length;
+                while (cpEnd < remaining.length && remaining[cpEnd] !== ')') {
+                    cpEnd++;
+                }
+                if (remaining[cpEnd] === ')') cpEnd++;
+                pos += skipModifiers(remaining, cpEnd);
+            } else {
+                pos++;
+            }
+        } else if (remaining.startsWith('ProgressView()')) {
+            children.push({ kind: 'ProgressView', props: {}, modifiers: [], children: [] });
+            pos += skipModifiers(remaining, 14);
+        } else if (remaining.match(/^Link\("/)) {
+            const linkMatch = remaining.match(/^Link\("([^"]+)",\s*destination:\s*URL\(string:\s*"([^"]+)"\)/);
+            if (linkMatch) {
+                children.push({ kind: 'Link', props: { title: linkMatch[1], destination: linkMatch[2] }, modifiers: [], children: [] });
+                pos += skipModifiers(remaining, linkMatch[0].length);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^Picker\("/)) {
+            const pickerMatch = remaining.match(/^Picker\("([^"]+)"/);
+            if (pickerMatch) {
+                children.push({ kind: 'Picker', props: { label: pickerMatch[1] }, modifiers: [], children: [] });
+                // Find the closing paren
+                let pickEnd = pickerMatch[0].length;
+                while (pickEnd < remaining.length && remaining[pickEnd] !== ')') {
+                    pickEnd++;
+                }
+                if (remaining[pickEnd] === ')') pickEnd++;
+                pos += skipModifiers(remaining, pickEnd);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^LinearGradient\(/)) {
+            const lgMatch = remaining.match(/^LinearGradient\([^)]*\)/);
+            if (lgMatch) {
+                children.push({ kind: 'LinearGradient', props: { colors: ['blue', 'purple'] }, modifiers: [], children: [] });
+                pos += skipModifiers(remaining, lgMatch[0].length);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^RadialGradient\(/)) {
+            const rgMatch = remaining.match(/^RadialGradient\([^)]*\)/);
+            if (rgMatch) {
+                children.push({ kind: 'RadialGradient', props: { colors: ['blue', 'purple'] }, modifiers: [], children: [] });
+                pos += skipModifiers(remaining, rgMatch[0].length);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^AsyncImage\(/)) {
+            const aiMatch = remaining.match(/^AsyncImage\(url:\s*URL\(string:\s*"([^"]+)"\)/);
+            if (aiMatch) {
+                children.push({ kind: 'AsyncImage', props: { url: aiMatch[1] }, modifiers: [], children: [] });
+                pos += skipModifiers(remaining, aiMatch[0].length);
+            } else {
+                pos++;
+            }
+        } else if (remaining.startsWith('TextEditor(')) {
+            const teMatch = remaining.match(/^TextEditor\([^)]*\)/);
+            if (teMatch) {
+                children.push({ kind: 'TextEditor', props: { text: 'Enter text...' }, modifiers: [], children: [] });
+                pos += skipModifiers(remaining, teMatch[0].length);
+            } else {
+                pos++;
+            }
+        } else if (remaining.match(/^NavigationLink\("/)) {
+            const nlMatch = remaining.match(/^NavigationLink\("([^"]+)"\)/);
+            if (nlMatch) {
+                children.push({ kind: 'NavigationLink', props: { label: nlMatch[1], destination: '' }, modifiers: [], children: [] });
+                pos += skipModifiers(remaining, nlMatch[0].length);
+            } else {
+                pos++;
+            }
         } else {
             pos++;
         }
@@ -2517,6 +2889,84 @@ function findClosureEnd(content: string): number {
     }
     
     return pos;
+}
+
+/**
+ * Skip past view declaration and any trailing modifiers
+ * Returns the total length to skip
+ */
+function skipModifiers(content: string, baseLength: number): number {
+    let pos = baseLength;
+    
+    // Look for chained modifiers starting with .
+    while (pos < content.length) {
+        const remaining = content.substring(pos).trim();
+        const whitespaceSkip = content.substring(pos).indexOf(remaining[0]);
+        pos += whitespaceSkip;
+        
+        if (remaining.startsWith('.')) {
+            // Match modifier like .padding() or .font(.title)
+            const modMatch = remaining.match(/^\.(\w+)(\([^)]*\))?/);
+            if (modMatch) {
+                pos += modMatch[0].length;
+            } else {
+                break;
+            }
+        } else {
+            break;
+        }
+    }
+    
+    return pos;
+}
+
+/**
+ * Find the end position of a view including its modifiers
+ */
+function findViewEnd(content: string): number {
+    // Find the end of the view declaration (could be ) or })
+    let pos = 0;
+    let parenCount = 0;
+    let braceCount = 0;
+    let inString = false;
+    
+    for (let i = 0; i < content.length; i++) {
+        const char = content[i];
+        
+        if (char === '"' && content[i-1] !== '\\') {
+            inString = !inString;
+        }
+        
+        if (!inString) {
+            if (char === '(') parenCount++;
+            if (char === ')') parenCount--;
+            if (char === '{') braceCount++;
+            if (char === '}') braceCount--;
+            
+            // If we've closed all parens and braces, check for modifiers
+            if (parenCount === 0 && braceCount === 0 && i > 0) {
+                pos = i + 1;
+                // Look for modifiers
+                while (pos < content.length) {
+                    const remaining = content.substring(pos).trim();
+                    if (remaining.startsWith('.')) {
+                        // Skip the modifier
+                        const modMatch = remaining.match(/^\.(\w+)(\([^)]*\))?/);
+                        if (modMatch) {
+                            pos += content.substring(pos).indexOf(modMatch[0]) + modMatch[0].length;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                return pos;
+            }
+        }
+    }
+    
+    return content.length;
 }
 
 /**

@@ -560,9 +560,12 @@ function renderNode(node: ViewNode): string {
             
         case 'Slider':
             const sliderValue = node.props.value || 0.5;
-            const sliderMin = node.props.range[0] || 0;
-            const sliderMax = node.props.range[1] || 1;
-            baseHtml = `<input type="range" class="slider" min="${sliderMin}" max="${sliderMax}" value="${sliderValue}"${style}>`;
+            const sliderMin = node.props.range?.[0] ?? 0;
+            const sliderMax = node.props.range?.[1] ?? 1;
+            const sliderStep = (sliderMax - sliderMin) > 10 ? 1 : 0.1;
+            const sliderPercent = ((sliderValue - sliderMin) / (sliderMax - sliderMin)) * 100;
+            const sliderStyle = `style="--slider-percent: ${sliderPercent}%"`;
+            baseHtml = `<div class="slider-container"${style}><input type="range" class="slider" ${sliderStyle} min="${sliderMin}" max="${sliderMax}" step="${sliderStep}" value="${sliderValue}"><div class="slider-value">${sliderValue}</div></div>`;
             break;
             
         case 'Stepper':

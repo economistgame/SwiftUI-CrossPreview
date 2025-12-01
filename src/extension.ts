@@ -9,6 +9,7 @@ import { renderToHtml, renderErrorBanner } from './renderer/renderHtml';
 let currentPanel: vscode.WebviewPanel | undefined = undefined;
 let currentDocumentUri: vscode.Uri | undefined = undefined;
 let changeSubscription: vscode.Disposable | undefined = undefined;
+let editorChangeSubscription: vscode.Disposable | undefined = undefined;
 let updateTimeout: NodeJS.Timeout | undefined = undefined;
 
 /**
@@ -85,6 +86,10 @@ export function activate(context: vscode.ExtensionContext) {
                         changeSubscription.dispose();
                         changeSubscription = undefined;
                     }
+                    if (editorChangeSubscription) {
+                        editorChangeSubscription.dispose();
+                        editorChangeSubscription = undefined;
+                    }
                     if (updateTimeout) {
                         clearTimeout(updateTimeout);
                         updateTimeout = undefined;
@@ -94,10 +99,44 @@ export function activate(context: vscode.ExtensionContext) {
             
             // Start live preview
             startLivePreviewForDocument(editor.document, currentPanel, context);
+            
+            // Set up automatic file switching
+            setupEditorChangeListener(currentPanel, context);
         }
     );
 
     context.subscriptions.push(disposable);
+}
+
+/**
+ * Set up listener for active editor changes to automatically switch preview
+ */
+function setupEditorChangeListener(
+    panel: vscode.WebviewPanel,
+    context: vscode.ExtensionContext
+) {
+    // Dispose existing subscription if any
+    if (editorChangeSubscription) {
+        editorChangeSubscription.dispose();
+    }
+    
+    editorChangeSubscription = vscode.window.onDidChangeActiveTextEditor(editor => {
+        // Only switch if panel is visible and a valid Swift file is active
+        if (panel && editor && editor.document.languageId === 'swift') {
+            const newUri = editor.document.uri;
+            
+            // Only update if it's a different file
+            if (!currentDocumentUri || currentDocumentUri.toString() !== newUri.toString()) {
+                console.log('Switching preview to:', newUri.fsPath);
+                currentDocumentUri = newUri;
+                
+                // Start live preview for the new document
+                startLivePreviewForDocument(editor.document, panel, context);
+            }
+        }
+    });
+    
+    context.subscriptions.push(editorChangeSubscription);
 }
 
 /**
@@ -201,7 +240,7 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             margin: 0;
             padding: 20px;
-            background-color: #f2f2f7;
+            background-color: #ffffff;
             color: #333333;
             display: flex;
             flex-direction: column;
@@ -234,6 +273,8 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
             background-color: #ffffff;
             border-radius: 4px;
             box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            width: 430px;
+            box-sizing: border-box;
         }
         
         #status {
@@ -284,6 +325,8 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
             padding: 24px 0;
             transform-origin: top center;
             transition: transform 0.3s ease;
+            min-width: fit-content;
+            overflow-x: auto;
         }
         
         #device-bezel {
@@ -294,13 +337,15 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
             position: relative;
             transition: all 0.3s ease;
             flex-shrink: 0;
+            max-width: none;
         }
         
         #device-bezel.device-phone {
-            width: 430px;
+            width: 430px !important;
             height: 880px;
             min-width: 430px;
             min-height: 880px;
+            max-width: 430px;
         }
         
         #device-bezel.device-tablet {
@@ -348,6 +393,8 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
             justify-content: space-between;
             align-items: center;
             gap: 16px;
+            width: 430px;
+            box-sizing: border-box;
         }
         
         #device-auto {
@@ -450,6 +497,18 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
           display: flex;
           flex-direction: row;
           gap: 8px;
+        }
+        
+        .zstack {
+          position: relative;
+          display: grid;
+          grid-template-columns: 1fr;
+          grid-template-rows: 1fr;
+        }
+        
+        .zstack > * {
+          grid-column: 1;
+          grid-row: 1;
         }
 
         .text {
@@ -691,8 +750,15 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
         }
         
         /* v1.2.0 Input Controls */
-        .slider {
+        .slider-container {
           width: 100%;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+        }
+        
+        .slider {
+          flex: 1;
           height: 28px;
           -webkit-appearance: none;
           appearance: none;
@@ -700,11 +766,19 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
           outline: none;
         }
         
+        .slider-value {
+          min-width: 40px;
+          text-align: right;
+          font-size: 14px;
+          font-weight: 500;
+          color: #007aff;
+        }
+        
         .slider::-webkit-slider-track {
           width: 100%;
-          height: 3px;
+          height: 4px;
           background: #e5e5ea;
-          border-radius: 1.5px;
+          border-radius: 2px;
         }
         
         .slider::-webkit-slider-thumb {
@@ -717,13 +791,14 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
           border: 0.5px solid rgba(0, 0, 0, 0.04);
           box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.04);
           cursor: pointer;
+          margin-top: -12px;
         }
         
         .slider::-moz-range-track {
           width: 100%;
-          height: 3px;
+          height: 4px;
           background: #e5e5ea;
-          border-radius: 1.5px;
+          border-radius: 2px;
         }
         
         .slider::-moz-range-thumb {
@@ -734,6 +809,20 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
           border: 0.5px solid rgba(0, 0, 0, 0.04);
           box-shadow: 0 3px 8px rgba(0, 0, 0, 0.15);
           cursor: pointer;
+        }
+        
+        /* Blue progress fill for slider */
+        .slider::-webkit-slider-runnable-track {
+          width: 100%;
+          height: 4px;
+          background: linear-gradient(to right, #007aff 0%, #007aff var(--slider-percent, 50%), #e5e5ea var(--slider-percent, 50%), #e5e5ea 100%);
+          border-radius: 2px;
+        }
+        
+        .slider::-moz-range-progress {
+          height: 4px;
+          background: #007aff;
+          border-radius: 2px;
         }
         
         .stepper {
@@ -2020,6 +2109,9 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                         rootEl.innerHTML = '<div class="empty">No preview available</div>';
                     }
                     
+                    // Setup sliders after content update
+                    setupSliders();
+                    
                     // Update status timestamp
                     if (statusEl && msg.meta && msg.meta.updatedAt) {
                         const time = new Date(msg.meta.updatedAt).toLocaleTimeString();
@@ -2209,6 +2301,35 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
             }
             
             document.getElementById('snapshot-btn-header').addEventListener('click', exportSnapshot);
+            
+            // Update slider progress fill on input
+            function updateSliderProgress(slider) {
+                const min = parseFloat(slider.min) || 0;
+                const max = parseFloat(slider.max) || 100;
+                const value = parseFloat(slider.value) || 0;
+                const percent = ((value - min) / (max - min)) * 100;
+                slider.style.setProperty('--slider-percent', percent + '%');
+                
+                // Update the value display
+                const valueDisplay = slider.parentElement?.querySelector('.slider-value');
+                if (valueDisplay) {
+                    valueDisplay.textContent = value;
+                }
+            }
+            
+            // Initialize all sliders
+            function setupSliders() {
+                const sliders = document.querySelectorAll('.slider');
+                sliders.forEach(slider => {
+                    updateSliderProgress(slider);
+                    slider.addEventListener('input', function() {
+                        updateSliderProgress(this);
+                    });
+                });
+            }
+            
+            // Call setup on render
+            setupSliders();
             
             // Zoom to fit window
             function updateZoom() {
