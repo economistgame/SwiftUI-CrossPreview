@@ -77,6 +77,9 @@ function buildStyle(node: ViewNode): string {
                 if (modifier.args.height !== undefined) {
                     styles.push(`height: ${modifier.args.height}px`);
                 }
+                if (modifier.args.maxWidth === 'infinity') {
+                    styles.push('width: 100%');
+                }
                 break;
                 
             case 'cornerRadius':
@@ -154,7 +157,14 @@ function buildStyle(node: ViewNode): string {
                 break;
                 
             case 'fill':
-                if (modifier.args.color) {
+                if (modifier.args.material) {
+                    const materialStyles = getMaterialStyles(modifier.args.material);
+                    styles.push(...materialStyles);
+                } else if (modifier.args.gradient === 'linear' && modifier.args.colors) {
+                    // Handle LinearGradient fill
+                    const gradientColors = modifier.args.colors.map((c: string) => swiftColorToCss(c)).join(', ');
+                    styles.push(`background: linear-gradient(135deg, ${gradientColors})`);
+                } else if (modifier.args.color) {
                     const fillColor = swiftColorToCss(modifier.args.color);
                     styles.push(`background-color: ${fillColor}`);
                 }
@@ -194,11 +204,24 @@ function buildStyle(node: ViewNode): string {
                 styles.push('user-select: none');
                 break;
                 
+            case 'onLongPressGesture':
+                styles.push('cursor: pointer');
+                styles.push('user-select: none');
+                break;
+                
+            case 'disabled':
+                if (modifier.args.isDisabled) {
+                    styles.push('opacity: 0.5');
+                    styles.push('pointer-events: none');
+                }
+                break;
+                
             case 'position':
                 if (modifier.args.x !== undefined && modifier.args.y !== undefined) {
                     styles.push('position: absolute');
                     styles.push(`left: ${modifier.args.x}px`);
                     styles.push(`top: ${modifier.args.y}px`);
+                    styles.push('transform: translate(-50%, -50%)');
                 }
                 break;
                 
@@ -235,6 +258,10 @@ function buildStyle(node: ViewNode): string {
                     styles.push('overflow: hidden');
                 } else if (modifier.args.shape === 'capsule') {
                     styles.push('border-radius: 9999px');
+                    styles.push('overflow: hidden');
+                } else if (modifier.args.shape === 'roundedRectangle') {
+                    const radius = modifier.args.cornerRadius || 10;
+                    styles.push(`border-radius: ${radius}px`);
                     styles.push('overflow: hidden');
                 } else {
                     styles.push('overflow: hidden');
@@ -328,27 +355,45 @@ function buildStyle(node: ViewNode): string {
  */
 function getMaterialStyles(kind: string): string[] {
     const styles: string[] = [];
+    const normalizedKind = kind.toLowerCase().replace('material', '');
     
-    switch (kind.toLowerCase()) {
+    switch (normalizedKind) {
         case 'ultrathin':
-            styles.push('background-color: rgba(255,255,255,0.08)');
-            styles.push('backdrop-filter: blur(18px)');
-            styles.push('border: 1px solid rgba(255,255,255,0.18)');
+            styles.push('background-color: rgba(200,200,200,0.3)');
+            styles.push('backdrop-filter: blur(20px)');
+            styles.push('-webkit-backdrop-filter: blur(20px)');
             break;
         case 'thin':
-            styles.push('background-color: rgba(255,255,255,0.12)');
-            styles.push('backdrop-filter: blur(18px)');
-            styles.push('border: 1px solid rgba(255,255,255,0.2)');
+            styles.push('background-color: rgba(200,200,200,0.4)');
+            styles.push('backdrop-filter: blur(20px)');
+            styles.push('-webkit-backdrop-filter: blur(20px)');
             break;
         case 'regular':
-            styles.push('background-color: rgba(255,255,255,0.18)');
-            styles.push('backdrop-filter: blur(18px)');
-            styles.push('border: 1px solid rgba(255,255,255,0.22)');
+            styles.push('background-color: rgba(200,200,200,0.5)');
+            styles.push('backdrop-filter: blur(20px)');
+            styles.push('-webkit-backdrop-filter: blur(20px)');
+            break;
+        case 'thick':
+            styles.push('background-color: rgba(200,200,200,0.6)');
+            styles.push('backdrop-filter: blur(20px)');
+            styles.push('-webkit-backdrop-filter: blur(20px)');
+            break;
+        case 'ultrathick':
+            styles.push('background-color: rgba(200,200,200,0.7)');
+            styles.push('backdrop-filter: blur(20px)');
+            styles.push('-webkit-backdrop-filter: blur(20px)');
             break;
         default:
-            styles.push('background-color: rgba(255,255,255,0.12)');
-            styles.push('backdrop-filter: blur(18px)');
-            styles.push('border: 1px solid rgba(255,255,255,0.2)');
+            // Also handle full names like "ultraThinMaterial"
+            if (normalizedKind.includes('ultrathin')) {
+                styles.push('background-color: rgba(200,200,200,0.3)');
+            } else if (normalizedKind.includes('thin')) {
+                styles.push('background-color: rgba(200,200,200,0.4)');
+            } else {
+                styles.push('background-color: rgba(200,200,200,0.5)');
+            }
+            styles.push('backdrop-filter: blur(20px)');
+            styles.push('-webkit-backdrop-filter: blur(20px)');
     }
     
     return styles;

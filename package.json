@@ -1,7 +1,7 @@
 {
   "name": "swiftui-crosspreview",
   "displayName": "SwiftUI CrossPreview",
-  "version": "1.4.0",
+  "version": "1.4.12",
   "description": "Live SwiftUI preview for VS Code on any platform. No Mac, no Xcode required. Supports 42 views, 71+ modifiers, navigation, tabs, and more.",
   "publisher": "ehsanazish",
   "icon": "media/icon.png",

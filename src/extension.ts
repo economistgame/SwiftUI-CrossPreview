@@ -501,14 +501,18 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
         
         .zstack {
           position: relative;
-          display: grid;
-          grid-template-columns: 1fr;
-          grid-template-rows: 1fr;
+          display: inline-block;
+          overflow: visible;
         }
         
         .zstack > * {
-          grid-column: 1;
-          grid-row: 1;
+          position: absolute;
+          top: 0;
+          left: 0;
+        }
+        
+        .zstack > *:first-child {
+          position: relative;
         }
 
         .text {
@@ -1246,6 +1250,54 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
           box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
         
+        /* Animation classes */
+        .has-rotation-animation {
+          animation: rotateAnimation 3s ease-in-out infinite;
+        }
+        
+        .has-scale-animation {
+          animation: scaleAnimation 2s ease-in-out infinite;
+        }
+        
+        .has-opacity-animation {
+          animation: fadeAnimation 2s ease-in-out infinite;
+        }
+        
+        .has-spring-animation {
+          animation: springAnimation 1.5s ease-in-out infinite;
+        }
+        
+        .has-generic-animation {
+          animation: pulseAnimation 2s ease-in-out infinite;
+        }
+        
+        @keyframes rotateAnimation {
+          0%, 100% { transform: rotate(0deg); }
+          50% { transform: rotate(45deg); }
+        }
+        
+        @keyframes scaleAnimation {
+          0%, 100% { transform: scale(1); }
+          50% { transform: scale(1.2); }
+        }
+        
+        @keyframes fadeAnimation {
+          0%, 100% { opacity: 1; }
+          50% { opacity: 0.3; }
+        }
+        
+        @keyframes springAnimation {
+          0%, 100% { transform: scale(1); }
+          25% { transform: scale(1.3); }
+          50% { transform: scale(0.9); }
+          75% { transform: scale(1.1); }
+        }
+        
+        @keyframes pulseAnimation {
+          0%, 100% { transform: scale(1); opacity: 1; }
+          50% { transform: scale(1.05); opacity: 0.9; }
+        }
+        
         .state-badges {
           position: absolute;
           top: 4px;
@@ -1304,6 +1356,52 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
         #apply-custom-size:hover {
           background-color: #28a745;
         }
+        
+        /* Gesture feedback styles */
+        .has-tap-gesture {
+          cursor: pointer;
+          transition: transform 0.1s ease, opacity 0.1s ease;
+        }
+        
+        .has-tap-gesture:active {
+          transform: scale(0.97);
+          opacity: 0.8;
+        }
+        
+        .has-long-press-gesture {
+          cursor: pointer;
+          transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        
+        .has-long-press-gesture.pressing {
+          transform: scale(0.95);
+          box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.4);
+        }
+        
+        .gesture-feedback {
+          position: fixed;
+          padding: 8px 16px;
+          background: rgba(0, 0, 0, 0.8);
+          color: white;
+          border-radius: 8px;
+          font-size: 12px;
+          font-weight: 500;
+          z-index: 9999;
+          pointer-events: none;
+          animation: fadeInOut 1s ease forwards;
+        }
+        
+        @keyframes fadeInOut {
+          0% { opacity: 0; transform: translateY(10px); }
+          15% { opacity: 1; transform: translateY(0); }
+          85% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-10px); }
+        }
+        
+        .disabled-view {
+          opacity: 0.5;
+          pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -1360,10 +1458,11 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
             function renderToHtml(node) {
                 if (!node) return '';
                 
-                function buildStyle(n) {
-                    if (!n.modifiers || n.modifiers.length === 0) return '';
+                function buildStyleAndClasses(n) {
+                    if (!n.modifiers || n.modifiers.length === 0) return { style: '', classes: [] };
                     
                     const styles = [];
+                    const classes = [];
                     
                     for (const mod of n.modifiers) {
                         switch (mod.name) {
@@ -1498,8 +1597,15 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                                 styles.push('overflow: hidden');
                                 break;
                             case 'onTapGesture':
-                                styles.push('cursor: pointer');
-                                styles.push('user-select: none');
+                                classes.push('has-tap-gesture');
+                                break;
+                            case 'onLongPressGesture':
+                                classes.push('has-long-press-gesture');
+                                break;
+                            case 'disabled':
+                                if (mod.args.isDisabled) {
+                                    classes.push('disabled-view');
+                                }
                                 break;
                             case 'position':
                                 if (mod.args.x !== undefined && mod.args.y !== undefined) {
@@ -1635,7 +1741,10 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                         }
                     }
                     
-                    return styles.length > 0 ? ' style="' + styles.join('; ') + '"' : '';
+                    return {
+                        style: styles.length > 0 ? ' style="' + styles.join('; ') + '"' : '',
+                        classes: classes
+                    };
                 }
                 
                 function getMaterialStyles(kind) {
@@ -1697,7 +1806,14 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                     // Check for overlay modifier
                     const overlayMod = n.modifiers && n.modifiers.find(function(m) { return m.name === 'overlay'; });
                     
-                    const style = buildStyle(n);
+                    const styleAndClasses = buildStyleAndClasses(n);
+                    const style = styleAndClasses.style;
+                    const extraClasses = styleAndClasses.classes;
+                    
+                    function addClass(baseClass) {
+                        return extraClasses.length > 0 ? baseClass + ' ' + extraClasses.join(' ') : baseClass;
+                    }
+                    
                     let baseHtml = '';
                     let stackStyles = '';
                     
@@ -1711,7 +1827,7 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                                 else if (n.props.alignment === 'center') stackStyles += 'align-items: center; ';
                                 else if (n.props.alignment === 'trailing') stackStyles += 'align-items: flex-end; ';
                             }
-                            baseHtml = '<div class="vstack"' + (stackStyles ? ' style="' + stackStyles.trim() + '"' : '') + style + '>' + n.children.map(renderNode).join('') + '</div>';
+                            baseHtml = '<div class="' + addClass('vstack') + '"' + (stackStyles ? ' style="' + stackStyles.trim() + '"' : '') + style + '>' + n.children.map(renderNode).join('') + '</div>';
                             break;
                         case 'HStack':
                             if (n.props.spacing !== undefined) {
@@ -1722,44 +1838,44 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                                 else if (n.props.alignment === 'center') stackStyles += 'align-items: center; ';
                                 else if (n.props.alignment === 'bottom') stackStyles += 'align-items: flex-end; ';
                             }
-                            baseHtml = '<div class="hstack"' + (stackStyles ? ' style="' + stackStyles.trim() + '"' : '') + style + '>' + n.children.map(renderNode).join('') + '</div>';
+                            baseHtml = '<div class="' + addClass('hstack') + '"' + (stackStyles ? ' style="' + stackStyles.trim() + '"' : '') + style + '>' + n.children.map(renderNode).join('') + '</div>';
                             break;
                         case 'ZStack':
-                            baseHtml = '<div class="zstack"' + style + '>' + n.children.map(renderNode).join('') + '</div>';
+                            baseHtml = '<div class="' + addClass('zstack') + '"' + style + '>' + n.children.map(renderNode).join('') + '</div>';
                             break;
                         case 'Text':
-                            baseHtml = '<div class="text"' + style + '>' + escapeHtml(n.props.text || '') + '</div>';
+                            baseHtml = '<div class="' + addClass('text') + '"' + style + '>' + escapeHtml(n.props.text || '') + '</div>';
                             break;
                         case 'Image':
-                            baseHtml = '<div class="image-placeholder"' + style + '>' + escapeHtml(n.props.name || 'Image') + '</div>';
+                            baseHtml = '<div class="' + addClass('image-placeholder') + '"' + style + '>' + escapeHtml(n.props.name || 'Image') + '</div>';
                             break;
                         case 'Spacer':
-                            baseHtml = '<div class="spacer"' + style + '></div>';
+                            baseHtml = '<div class="' + addClass('spacer') + '"' + style + '></div>';
                             break;
                         case 'List':
-                            baseHtml = '<div class="list"' + style + '>' + n.children.map(renderNode).join('') + '</div>';
+                            baseHtml = '<div class="' + addClass('list') + '"' + style + '>' + n.children.map(renderNode).join('') + '</div>';
                             break;
                         case 'Form':
-                            baseHtml = '<div class="form"' + style + '>' + n.children.map(renderNode).join('') + '</div>';
+                            baseHtml = '<div class="' + addClass('form') + '"' + style + '>' + n.children.map(renderNode).join('') + '</div>';
                             break;
                         case 'Section':
                             var headerHtml = n.props.header ? '<div class="section-header">' + escapeHtml(n.props.header) + '</div>' : '';
-                            baseHtml = '<div class="section"' + style + '>' + headerHtml + '<div class="section-body">' + n.children.map(renderNode).join('') + '</div></div>';
+                            baseHtml = '<div class="' + addClass('section') + '"' + style + '>' + headerHtml + '<div class="section-body">' + n.children.map(renderNode).join('') + '</div></div>';
                             break;
                         case 'ScrollView':
-                            baseHtml = '<div class="scrollview"' + style + '>' + n.children.map(renderNode).join('') + '</div>';
+                            baseHtml = '<div class="' + addClass('scrollview') + '"' + style + '>' + n.children.map(renderNode).join('') + '</div>';
                             break;
                         case 'ForEach':
                             baseHtml = renderForEach(n);
                             break;
                         case 'Button':
                             var buttonLabel = n.children.map(renderNode).join('');
-                            baseHtml = '<button class="button"' + style + '>' + (buttonLabel || 'Button') + '</button>';
+                            baseHtml = '<button class="' + addClass('button') + '"' + style + '>' + (buttonLabel || 'Button') + '</button>';
                             break;
                         case 'Toggle':
                             var toggleLabel = n.props.label || 'Toggle';
                             var toggleState = n.props.isOn ? 'checked' : '';
-                            baseHtml = '<label class="toggle"' + style + '><span>' + escapeHtml(toggleLabel) + '</span><input type="checkbox" ' + toggleState + '><span class="toggle-switch"></span></label>';
+                            baseHtml = '<label class="' + addClass('toggle') + '"' + style + '><span>' + escapeHtml(toggleLabel) + '</span><input type="checkbox" ' + toggleState + '><span class="toggle-switch"></span></label>';
                             break;
                         case 'Picker':
                             var pickerLabel = n.props.label || 'Picker';
@@ -1769,7 +1885,7 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                                 }
                                 return '';
                             }).join('');
-                            baseHtml = '<div class="picker"' + style + '><label>' + escapeHtml(pickerLabel) + '</label><select>' + (pickerOptions || '<option>Option</option>') + '</select></div>';
+                            baseHtml = '<div class="' + addClass('picker') + '"' + style + '><label>' + escapeHtml(pickerLabel) + '</label><select>' + (pickerOptions || '<option>Option</option>') + '</select></div>';
                             break;
                         case 'LinearGradient':
                             var linearColors = n.props.colors || ['blue', 'purple'];
@@ -1938,12 +2054,68 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                             '</div></div>';
                     }
                     
-                    // Add animation indicator
+                    // Add animation indicator and CSS animation
+                    var hasAnimation = n.modifiers && n.modifiers.some(function(m) { 
+                        return m.name === 'animation' || m.name === 'rotationEffect' || m.name === 'scaleEffect'; 
+                    });
+                    var rotationMod = n.modifiers && n.modifiers.find(function(m) { return m.name === 'rotationEffect'; });
+                    var scaleMod = n.modifiers && n.modifiers.find(function(m) { return m.name === 'scaleEffect'; });
+                    var opacityMod = n.modifiers && n.modifiers.find(function(m) { return m.name === 'opacity'; });
                     var animationMod = n.modifiers && n.modifiers.find(function(m) { return m.name === 'animation'; });
-                    if (animationMod) {
-                        return '<div style="position: relative; display: inline-block;">' +
-                            baseHtml +
-                            '<div class="animation-badge" title="Animated">🎬</div></div>';
+                    
+                    if (hasAnimation) {
+                        // Build dynamic animation based on parsed values
+                        var animStyles = [];
+                        var keyframeName = 'anim_' + Math.random().toString(36).substr(2, 9);
+                        var fromTransforms = [];
+                        var toTransforms = [];
+                        var fromOpacity = '1';
+                        var toOpacity = '1';
+                        
+                        // Get rotation degrees
+                        if (rotationMod && rotationMod.args) {
+                            var degrees = rotationMod.args.degrees || 45;
+                            fromTransforms.push('rotate(0deg)');
+                            toTransforms.push('rotate(' + degrees + 'deg)');
+                        }
+                        
+                        // Get scale value
+                        if (scaleMod && scaleMod.args) {
+                            var scale = scaleMod.args.scale || 1.2;
+                            fromTransforms.push('scale(1)');
+                            toTransforms.push('scale(' + scale + ')');
+                        }
+                        
+                        // Get opacity value
+                        if (opacityMod && opacityMod.args && opacityMod.args.value !== undefined) {
+                            fromOpacity = '1';
+                            toOpacity = String(opacityMod.args.value);
+                        }
+                        
+                        // Build keyframes
+                        var fromTransform = fromTransforms.length > 0 ? fromTransforms.join(' ') : 'none';
+                        var toTransform = toTransforms.length > 0 ? toTransforms.join(' ') : 'none';
+                        
+                        var keyframes = '@keyframes ' + keyframeName + ' { ' +
+                            '0%, 100% { transform: ' + fromTransform + '; opacity: ' + fromOpacity + '; } ' +
+                            '50% { transform: ' + toTransform + '; opacity: ' + toOpacity + '; } }';
+                        
+                        // Determine animation duration based on type
+                        var duration = '2s';
+                        var timing = 'ease-in-out';
+                        if (animationMod && animationMod.args) {
+                            if (animationMod.args.animationType === 'spring') {
+                                duration = '1s';
+                                timing = 'cubic-bezier(0.68, -0.55, 0.265, 1.55)';
+                            } else if (animationMod.args.animationType === 'linear') {
+                                timing = 'linear';
+                            }
+                        }
+                        
+                        return '<style>' + keyframes + '</style>' +
+                            '<div style="position: relative; display: inline-block;">' +
+                            '<div style="animation: ' + keyframeName + ' ' + duration + ' ' + timing + ' infinite;">' + baseHtml + '</div>' +
+                            '<div class="animation-badge" title="Animated: rotation=' + (rotationMod ? rotationMod.args.degrees : 0) + '° scale=' + (scaleMod ? scaleMod.args.scale : 1) + '">🎬</div></div>';
                     }
                     
                     // Add state property badges if present
@@ -2367,6 +2539,71 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                 originalSetDevice(device);
                 setTimeout(updateZoom, 100);
             };
+            
+            // Gesture feedback handling
+            function showGestureFeedback(element, message) {
+                const rect = element.getBoundingClientRect();
+                const feedback = document.createElement('div');
+                feedback.className = 'gesture-feedback';
+                feedback.textContent = message;
+                feedback.style.left = (rect.left + rect.width / 2) + 'px';
+                feedback.style.top = (rect.top - 40) + 'px';
+                feedback.style.transform = 'translateX(-50%)';
+                document.body.appendChild(feedback);
+                
+                setTimeout(function() {
+                    if (feedback.parentNode) {
+                        feedback.parentNode.removeChild(feedback);
+                    }
+                }, 1000);
+            }
+            
+            // Handle tap gestures
+            document.addEventListener('click', function(e) {
+                const target = e.target.closest('.has-tap-gesture');
+                if (target) {
+                    showGestureFeedback(target, '✓ Tap Detected');
+                }
+            });
+            
+            // Handle long press gestures
+            var longPressTimer = null;
+            var longPressTarget = null;
+            
+            document.addEventListener('mousedown', function(e) {
+                const target = e.target.closest('.has-long-press-gesture');
+                if (target) {
+                    longPressTarget = target;
+                    target.classList.add('pressing');
+                    
+                    longPressTimer = setTimeout(function() {
+                        showGestureFeedback(target, '✓ Long Press Detected');
+                        target.classList.remove('pressing');
+                    }, 500);
+                }
+            });
+            
+            document.addEventListener('mouseup', function(e) {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+                if (longPressTarget) {
+                    longPressTarget.classList.remove('pressing');
+                    longPressTarget = null;
+                }
+            });
+            
+            document.addEventListener('mouseleave', function(e) {
+                if (longPressTimer) {
+                    clearTimeout(longPressTimer);
+                    longPressTimer = null;
+                }
+                if (longPressTarget) {
+                    longPressTarget.classList.remove('pressing');
+                    longPressTarget = null;
+                }
+            });
         })();
     </script>
 </body>

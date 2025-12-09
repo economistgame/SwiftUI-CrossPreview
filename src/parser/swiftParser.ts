@@ -2109,15 +2109,15 @@ function parseRegexView(content: string): ViewNode | null {
         return parseRegexContainer(content, 'DisclosureGroup');
     }
     
-    // Match List/Form/ScrollView with their content
-    const containerMatch = content.match(/^(List|Form|ScrollView)\s*\{/);
+    // Match List/Form/ScrollView with optional parameters and their content
+    const containerMatch = content.match(/^(List|Form|ScrollView)(\s*\([^)]*\))?\s*\{/);
     if (containerMatch) {
         const kind = containerMatch[1] as "List" | "Form" | "ScrollView";
         return parseRegexContainer(content, kind);
     }
     
-    // Match VStack/HStack/ZStack with their content
-    const stackMatch = content.match(/^(VStack|HStack|ZStack)\s*\{/);
+    // Match VStack/HStack/ZStack with optional parameters and their content
+    const stackMatch = content.match(/^(VStack|HStack|ZStack)(\s*\([^)]*\))?\s*\{/);
     if (stackMatch) {
         const kind = stackMatch[1] as "VStack" | "HStack" | "ZStack";
         return parseRegexContainer(content, kind);
@@ -2347,7 +2347,20 @@ function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStac
         const remaining = innerContent.substring(pos).trim();
         if (!remaining) break;
         
-        // Try ForEach first
+        // Try nested containers (VStack, HStack, ZStack) first
+        const nestedStackMatch = remaining.match(/^(VStack|HStack|ZStack)(\s*\([^)]*\))?\s*\{/);
+        if (nestedStackMatch) {
+            const nestedKind = nestedStackMatch[1] as "VStack" | "HStack" | "ZStack";
+            const nestedNode = parseRegexContainer(remaining, nestedKind);
+            if (nestedNode) {
+                children.push(nestedNode);
+                const closureEnd = findClosureEnd(remaining);
+                pos += innerContent.substring(pos).indexOf(remaining[0]) + skipModifiers(remaining, closureEnd);
+                continue;
+            }
+        }
+        
+        // Try ForEach
         if (remaining.startsWith('ForEach')) {
             const forEachNode = parseRegexForEach(remaining);
             if (forEachNode) {
@@ -2367,76 +2380,134 @@ function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStac
             const modifiers: Modifier[] = [];
             
             while (currentPos < remaining.length) {
-                const modRemaining = remaining.substring(currentPos).trim();
+                // Handle whitespace properly
+                const afterView = remaining.substring(currentPos);
+                const trimmed = afterView.trimStart();
+                const whitespaceLen = afterView.length - trimmed.length;
+                currentPos += whitespaceLen;
                 
                 // Check if next non-whitespace is a dot (modifier)
-                if (!modRemaining.startsWith('.')) {
+                if (!trimmed.startsWith('.')) {
                     break;
                 }
                 
-                // Parse modifier
-                const modMatch = modRemaining.match(/^\.(\w+)\(([^)]*)\)/);
+                // Parse modifier - handle both .modifier() and .modifier(args)
+                const modMatch = trimmed.match(/^\.(\w+)(\(([^)]*)\))?/);
                 if (modMatch) {
                     const modName = modMatch[1];
-                    const modArgs = modMatch[2];
+                    const modArgs = modMatch[3] || '';
                     
                     // Parse modifier arguments
                     const args: Record<string, any> = {};
                     
-                    if (modName === 'padding' && modArgs) {
-                        const num = parseFloat(modArgs);
-                        if (!isNaN(num)) args.all = num;
-                    } else if (modName === 'font' && modArgs) {
+                    if (modName === 'padding') {
+                        if (modArgs) {
+                            const num = parseFloat(modArgs);
+                            if (!isNaN(num)) args.all = num;
+                        } else {
+                            args.all = 16; // default padding
+                        }
+                    } else if (modName === 'font') {
                         const fontMatch = modArgs.match(/\.(\w+)/);
                         if (fontMatch) args.style = fontMatch[1];
-                    } else if (modName === 'foregroundColor' && modArgs) {
+                    } else if (modName === 'foregroundColor') {
                         const colorMatch = modArgs.match(/\.(\w+)/);
                         if (colorMatch) args.color = colorMatch[1];
-                    } else if (modName === 'background' && modArgs) {
+                    } else if (modName === 'foregroundStyle') {
+                        const colorMatch = modArgs.match(/\.(\w+)/);
+                        if (colorMatch) args.color = colorMatch[1];
+                    } else if (modName === 'background') {
                         // Check for material or color
-                        const materialMatch = modArgs.match(/\.(ultraThin|thin|regular)Material/);                            const colorMatch = modArgs.match(/Color\.(\w+)/);
-                            if (materialMatch) {
-                                args.material = materialMatch[1];
-                            } else if (colorMatch) {
-                                args.color = colorMatch[1];
-                            }
-                        } else if (modName === 'cornerRadius' && modArgs) {
-                            const num = parseFloat(modArgs);
-                            if (!isNaN(num)) args.radius = num;
-                        } else if (modName === 'shadow' && modArgs) {
-                            const radiusMatch = modArgs.match(/radius:\s*([\d.]+)/);
-                            if (radiusMatch) {
-                                args.radius = parseFloat(radiusMatch[1]);
-                            } else if (modArgs === '') {
-                                args.radius = 8; // default
-                            }
-                        } else if (modName === 'opacity' && modArgs) {
-                            const num = parseFloat(modArgs);
-                            if (!isNaN(num)) args.value = num;
-                        } else if (modName === 'blur' && modArgs) {
-                            const radiusMatch = modArgs.match(/radius:\s*([\d.]+)/);
-                            if (radiusMatch) {
-                                args.radius = parseFloat(radiusMatch[1]);
-                            }
-                        } else if (modName === 'multilineTextAlignment' && modArgs) {
-                            const alignMatch = modArgs.match(/\.(\w+)/);
-                            if (alignMatch) args.alignment = alignMatch[1];
-                        } else if (modName === 'lineLimit' && modArgs) {
-                            const num = parseInt(modArgs);
-                            if (!isNaN(num)) args.lines = num;
-                        } else if (modName === 'frame' && modArgs) {
-                            const widthMatch = modArgs.match(/width:\s*(\d+)/);
-                            const heightMatch = modArgs.match(/height:\s*(\d+)/);
-                            if (widthMatch) args.width = parseInt(widthMatch[1]);
-                            if (heightMatch) args.height = parseInt(heightMatch[1]);
+                        const materialMatch = modArgs.match(/\.(ultraThin|thin|regular|thick|ultraThick)Material/);
+                        const colorMatch = modArgs.match(/\.(\w+)/);
+                        if (materialMatch) {
+                            args.material = materialMatch[1];
+                        } else if (colorMatch) {
+                            args.color = colorMatch[1];
                         }
-                        
-                        modifiers.push({ name: modName, args });
-                        currentPos += modMatch[0].length;
-                    } else {
-                        break;
+                    } else if (modName === 'cornerRadius') {
+                        const num = parseFloat(modArgs);
+                        if (!isNaN(num)) args.radius = num;
+                    } else if (modName === 'shadow') {
+                        const radiusMatch = modArgs.match(/radius:\s*([\d.]+)/);
+                        if (radiusMatch) {
+                            args.radius = parseFloat(radiusMatch[1]);
+                        } else {
+                            args.radius = 8; // default
+                        }
+                    } else if (modName === 'opacity') {
+                        const num = parseFloat(modArgs);
+                        if (!isNaN(num)) args.value = num;
+                    } else if (modName === 'blur') {
+                        const radiusMatch = modArgs.match(/radius:\s*([\d.]+)/);
+                        if (radiusMatch) {
+                            args.radius = parseFloat(radiusMatch[1]);
+                        }
+                    } else if (modName === 'multilineTextAlignment') {
+                        const alignMatch = modArgs.match(/\.(\w+)/);
+                        if (alignMatch) args.alignment = alignMatch[1];
+                    } else if (modName === 'lineLimit') {
+                        const num = parseInt(modArgs);
+                        if (!isNaN(num)) args.lines = num;
+                    } else if (modName === 'frame') {
+                        const widthMatch = modArgs.match(/width:\s*(\d+)/);
+                        const heightMatch = modArgs.match(/height:\s*(\d+)/);
+                        const maxWidthMatch = modArgs.match(/maxWidth:\s*\.infinity/);
+                        if (widthMatch) args.width = parseInt(widthMatch[1]);
+                        if (heightMatch) args.height = parseInt(heightMatch[1]);
+                        if (maxWidthMatch) args.maxWidth = 'infinity';
+                    } else if (modName === 'onTapGesture') {
+                        args.hasGesture = true;
+                    } else if (modName === 'onLongPressGesture') {
+                        args.hasLongPress = true;
+                    } else if (modName === 'disabled') {
+                        const boolMatch = modArgs.match(/(true|false)/);
+                        args.isDisabled = boolMatch ? boolMatch[1] === 'true' : true;
+                    } else if (modName === 'bold') {
+                        args.isBold = true;
+                    } else if (modName === 'animation') {
+                        args.hasAnimation = true;
+                        // Try to extract animation type
+                        const typeMatch = modArgs.match(/\.(easeInOut|easeIn|easeOut|linear|spring)/);
+                        if (typeMatch) args.animationType = typeMatch[1];
+                    } else if (modName === 'rotationEffect') {
+                        args.hasAnimation = true;
+                        // Handle .degrees(value) or .degrees(condition ? value1 : value2)
+                        const degreeMatch = modArgs.match(/\.degrees\(([^)]+)\)/);
+                        if (degreeMatch) {
+                            const degreeExpr = degreeMatch[1];
+                            // Check for ternary - take the larger absolute value
+                            const ternaryMatch = degreeExpr.match(/\?.*?([-\d.]+)\s*:\s*([-\d.]+)/);
+                            if (ternaryMatch) {
+                                const val1 = Math.abs(parseFloat(ternaryMatch[1]));
+                                const val2 = Math.abs(parseFloat(ternaryMatch[2]));
+                                args.degrees = Math.max(val1, val2);
+                            } else {
+                                const simpleMatch = degreeExpr.match(/([-\d.]+)/);
+                                if (simpleMatch) args.degrees = parseFloat(simpleMatch[1]);
+                            }
+                        }
+                    } else if (modName === 'scaleEffect') {
+                        args.hasAnimation = true;
+                        // Handle simple value or ternary
+                        const ternaryMatch = modArgs.match(/\?.*?([\d.]+)\s*:\s*([\d.]+)/);
+                        if (ternaryMatch) {
+                            const val1 = parseFloat(ternaryMatch[1]);
+                            const val2 = parseFloat(ternaryMatch[2]);
+                            // Use the value furthest from 1
+                            args.scale = Math.abs(val1 - 1) > Math.abs(val2 - 1) ? val1 : val2;
+                        } else {
+                            const scaleMatch = modArgs.match(/([\d.]+)/);
+                            if (scaleMatch) args.scale = parseFloat(scaleMatch[1]);
+                        }
                     }
+                    
+                    modifiers.push({ name: modName, args });
+                    currentPos += modMatch[0].length;
+                } else {
+                    break;
                 }
+            }
             
             children.push({
                 kind: 'Text',
@@ -2531,21 +2602,28 @@ function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStac
             
             // Parse modifiers
             while (currentPos < remaining.length) {
-                const modRemaining = remaining.substring(currentPos).trim();
-                const whitespaceSkip = remaining.substring(currentPos).indexOf(modRemaining[0]);
-                currentPos += whitespaceSkip;
+                const afterView = remaining.substring(currentPos);
+                const trimmed = afterView.trimStart();
+                const whitespaceLen = afterView.length - trimmed.length;
+                currentPos += whitespaceLen;
                 
-                if (!modRemaining.startsWith('.')) break;
+                if (!trimmed.startsWith('.')) break;
                 
-                const modMatch = modRemaining.match(/^\.(\w+)(\(([^)]*)\))?/);
+                const modMatch = trimmed.match(/^\.(\w+)(\(([^)]*)\))?/);
                 if (modMatch) {
                     const modName = modMatch[1];
                     const modArgs = modMatch[3] || '';
                     const args: Record<string, any> = {};
                     
                     if (modName === 'fill') {
-                        const colorMatch = modArgs.match(/\.(\w+)/);
-                        if (colorMatch) args.color = colorMatch[1];
+                        // Check for material first
+                        const materialMatch = modArgs.match(/\.(ultraThinMaterial|thinMaterial|regularMaterial|thickMaterial|ultraThickMaterial)/);
+                        if (materialMatch) {
+                            args.material = materialMatch[1].replace('Material', '');
+                        } else {
+                            const colorMatch = modArgs.match(/\.(\w+)/);
+                            if (colorMatch) args.color = colorMatch[1];
+                        }
                     } else if (modName === 'frame') {
                         const widthMatch = modArgs.match(/width:\s*(\d+)/);
                         const heightMatch = modArgs.match(/height:\s*(\d+)/);
@@ -2559,6 +2637,15 @@ function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStac
                         const yMatch = modArgs.match(/y:\s*(\d+)/);
                         if (xMatch) args.x = parseInt(xMatch[1]);
                         if (yMatch) args.y = parseInt(yMatch[1]);
+                    } else if (modName === 'clipShape') {
+                        if (modArgs.includes('Circle')) args.shape = 'circle';
+                        else if (modArgs.includes('Capsule')) args.shape = 'capsule';
+                        else if (modArgs.includes('RoundedRectangle')) {
+                            args.shape = 'roundedRectangle';
+                            const radiusMatch = modArgs.match(/cornerRadius:\s*(\d+)/);
+                            if (radiusMatch) args.cornerRadius = parseInt(radiusMatch[1]);
+                        }
+                        else args.shape = 'rectangle';
                     }
                     
                     modifiers.push({ name: modName, args });
@@ -2576,20 +2663,22 @@ function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStac
             
             // Parse modifiers
             while (currentPos < remaining.length) {
-                const modRemaining = remaining.substring(currentPos).trim();
-                const whitespaceSkip = remaining.substring(currentPos).indexOf(modRemaining[0]);
-                currentPos += whitespaceSkip;
+                const afterView = remaining.substring(currentPos);
+                const trimmed = afterView.trimStart();
+                const whitespaceLen = afterView.length - trimmed.length;
+                currentPos += whitespaceLen;
                 
-                if (!modRemaining.startsWith('.')) break;
+                if (!trimmed.startsWith('.')) break;
                 
-                const modMatch = modRemaining.match(/^\.(\w+)(\(([^)]*)\))?/);
+                const modMatch = trimmed.match(/^\.(\w+)(\(([^)]*)\))?/);
                 if (modMatch) {
                     const modName = modMatch[1];
                     const modArgs = modMatch[3] || '';
                     const args: Record<string, any> = {};
                     
                     if (modName === 'fill') {
-                        const colorMatch = modArgs.match(/\.(\w+)/);
+                        // Handle both Color.blue and .blue formats
+                        const colorMatch = modArgs.match(/(?:Color\.)?(\w+)/);
                         if (colorMatch) args.color = colorMatch[1];
                     } else if (modName === 'frame') {
                         const widthMatch = modArgs.match(/width:\s*(\d+)/);
@@ -2601,6 +2690,22 @@ function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStac
                         const yMatch = modArgs.match(/y:\s*(\d+)/);
                         if (xMatch) args.x = parseInt(xMatch[1]);
                         if (yMatch) args.y = parseInt(yMatch[1]);
+                    } else if (modName === 'clipShape') {
+                        if (modArgs.includes('Circle')) args.shape = 'circle';
+                        else if (modArgs.includes('Capsule')) args.shape = 'capsule';
+                        else if (modArgs.includes('RoundedRectangle')) {
+                            args.shape = 'roundedRectangle';
+                            const radiusMatch = modArgs.match(/cornerRadius:\s*(\d+)/);
+                            if (radiusMatch) args.cornerRadius = parseInt(radiusMatch[1]);
+                        }
+                    } else if (modName === 'animation') {
+                        args.hasAnimation = true;
+                        const typeMatch = modArgs.match(/\.(easeInOut|easeIn|easeOut|linear|spring)/);
+                        if (typeMatch) args.animationType = typeMatch[1];
+                    } else if (modName === 'scaleEffect') {
+                        args.hasAnimation = true;
+                        const scaleMatch = modArgs.match(/([\d.]+)/);
+                        if (scaleMatch) args.scale = parseFloat(scaleMatch[1]);
                     }
                     
                     modifiers.push({ name: modName, args });
@@ -2621,10 +2726,109 @@ function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStac
             if (ellipseView) children.push(ellipseView);
             pos += skipModifiers(remaining, 9);
         } else if (remaining.match(/^RoundedRectangle\(cornerRadius:\s*\d+\)/)) {
-            const rrView = parseRegexView(remaining);
-            if (rrView) children.push(rrView);
-            const rrMatch = remaining.match(/^RoundedRectangle\(cornerRadius:\s*\d+\)/);
-            if (rrMatch) pos += skipModifiers(remaining, rrMatch[0].length);
+            const rrMatch = remaining.match(/^RoundedRectangle\(cornerRadius:\s*(\d+)\)/);
+            if (rrMatch) {
+                let currentPos = rrMatch[0].length;
+                const modifiers: Modifier[] = [];
+                const cornerRadius = parseInt(rrMatch[1]);
+                
+                // Parse modifiers
+                while (currentPos < remaining.length) {
+                    const afterView = remaining.substring(currentPos);
+                    const trimmed = afterView.trimStart();
+                    const whitespaceLen = afterView.length - trimmed.length;
+                    currentPos += whitespaceLen;
+                    
+                    if (!trimmed.startsWith('.')) break;
+                    
+                    // Handle multi-line fill with LinearGradient
+                    if (trimmed.startsWith('.fill(')) {
+                        // Find matching closing paren - count parens (handles multi-line)
+                        let parenCount = 1; // We're inside .fill(
+                        let fillEnd = 6; // start after ".fill("
+                        while (fillEnd < trimmed.length && parenCount > 0) {
+                            if (trimmed[fillEnd] === '(') parenCount++;
+                            if (trimmed[fillEnd] === ')') parenCount--;
+                            fillEnd++;
+                        }
+                        const fillContent = trimmed.substring(6, fillEnd - 1);
+                        const args: Record<string, any> = {};
+                        
+                        // Check for LinearGradient
+                        if (fillContent.includes('LinearGradient')) {
+                            args.gradient = 'linear';
+                            // Extract colors - handle [.purple, .pink] format
+                            const colorsMatch = fillContent.match(/colors:\s*\[([^\]]+)\]/);
+                            if (colorsMatch) {
+                                const colorList = colorsMatch[1]
+                                    .split(',')
+                                    .map(c => c.trim().replace(/^\./, '')); // Remove leading dot
+                                args.colors = colorList;
+                            }
+                        } else {
+                            const colorMatch = fillContent.match(/(?:Color\.)?\.?(\w+)/);
+                            if (colorMatch) args.color = colorMatch[1];
+                        }
+                        
+                        modifiers.push({ name: 'fill', args });
+                        currentPos += fillEnd;
+                        continue;
+                    }
+                    
+                    const modMatch = trimmed.match(/^\.(\w+)(\(([^)]*)\))?/);
+                    if (modMatch) {
+                        const modName = modMatch[1];
+                        const modArgs = modMatch[3] || '';
+                        const args: Record<string, any> = {};
+                        
+                        if (modName === 'frame') {
+                            const widthMatch = modArgs.match(/width:\s*(\d+)/);
+                            const heightMatch = modArgs.match(/height:\s*(\d+)/);
+                            if (widthMatch) args.width = parseInt(widthMatch[1]);
+                            if (heightMatch) args.height = parseInt(heightMatch[1]);
+                        } else if (modName === 'animation') {
+                            args.hasAnimation = true;
+                            const typeMatch = modArgs.match(/\.(easeInOut|easeIn|easeOut|linear|spring)/);
+                            if (typeMatch) args.animationType = typeMatch[1];
+                        } else if (modName === 'rotationEffect') {
+                            args.hasAnimation = true;
+                            // Handle .degrees(value) or .degrees(condition ? value1 : value2)
+                            const degreeMatch = modArgs.match(/\.degrees\(([^)]+)\)/);
+                            if (degreeMatch) {
+                                const degreeExpr = degreeMatch[1];
+                                const ternaryMatch = degreeExpr.match(/\?.*?([-\d.]+)\s*:\s*([-\d.]+)/);
+                                if (ternaryMatch) {
+                                    const val1 = Math.abs(parseFloat(ternaryMatch[1]));
+                                    const val2 = Math.abs(parseFloat(ternaryMatch[2]));
+                                    args.degrees = Math.max(val1, val2);
+                                } else {
+                                    const simpleMatch = degreeExpr.match(/([-\d.]+)/);
+                                    if (simpleMatch) args.degrees = parseFloat(simpleMatch[1]);
+                                }
+                            }
+                        } else if (modName === 'scaleEffect') {
+                            args.hasAnimation = true;
+                            const ternaryMatch = modArgs.match(/\?.*?([\d.]+)\s*:\s*([\d.]+)/);
+                            if (ternaryMatch) {
+                                const val1 = parseFloat(ternaryMatch[1]);
+                                const val2 = parseFloat(ternaryMatch[2]);
+                                args.scale = Math.abs(val1 - 1) > Math.abs(val2 - 1) ? val1 : val2;
+                            } else {
+                                const scaleMatch = modArgs.match(/([\d.]+)/);
+                                if (scaleMatch) args.scale = parseFloat(scaleMatch[1]);
+                            }
+                        }
+                        
+                        modifiers.push({ name: modName, args });
+                        currentPos += modMatch[0].length;
+                    } else {
+                        break;
+                    }
+                }
+                
+                children.push({ kind: 'RoundedRectangle', props: { cornerRadius }, modifiers, children: [] });
+                pos += currentPos;
+            }
         } else if (remaining.match(/^Image\("/)) {
             const imgMatch = remaining.match(/^Image\("([^"]+)"\)/);
             if (imgMatch) {

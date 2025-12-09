@@ -27,7 +27,7 @@ struct AdvancedModifiersDemo: View {
                         Circle()
                             .fill(.red)
                             .frame(width: 10, height: 10)
-                            .position(x: 50, y: 50)
+                            .position(x: 150, y: 70)
                         
                         Circle()
                             .fill(.blue)
