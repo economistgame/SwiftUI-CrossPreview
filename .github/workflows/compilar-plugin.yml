@@ -1,0 +1,43 @@
+
+name: Compilar SwiftUI CrossPreview
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-plugin:
+    runs-on: macos-latest
+
+    steps:
+      - name: Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: Descargar código del plugin
+        run: |
+          git clone --depth 1 \
+            https://github.com/economistgame/SwiftUI-CrossPreview.git \
+            plugin
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Instalar dependencias
+        working-directory: plugin
+        run: npm ci
+
+      - name: Compilar plugin
+        working-directory: plugin
+        run: npm run build
+
+      - name: Generar VSIX
+        working-directory: plugin
+        run: npm run package
+
+      - name: Guardar plugin descargable
+        uses: actions/upload-artifact@v4
+        with:
+          name: SwiftUI-CrossPreview
+          path: plugin/*.vsix
+          if-no-files-found: error
