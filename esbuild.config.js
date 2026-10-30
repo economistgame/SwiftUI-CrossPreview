@@ -1,6 +1,21 @@
 const esbuild = require('esbuild');
+const fs = require('fs');
+const path = require('path');
 
 const isWatch = process.argv.includes('--watch');
+
+// WebAssembly files loaded at runtime by web-tree-sitter (no native build needed)
+const wasmFiles = [
+  require.resolve('web-tree-sitter/tree-sitter.wasm'),
+  path.join(path.dirname(require.resolve('tree-sitter-wasms/package.json')), 'out', 'tree-sitter-swift.wasm'),
+];
+
+function copyWasm() {
+  fs.mkdirSync('dist', { recursive: true });
+  for (const file of wasmFiles) {
+    fs.copyFileSync(file, path.join('dist', path.basename(file)));
+  }
+}
 
 const buildOptions = {
   entryPoints: ['src/extension.ts'],
@@ -16,6 +31,7 @@ const buildOptions = {
 
 async function build() {
   try {
+    copyWasm();
     if (isWatch) {
       const context = await esbuild.context(buildOptions);
       await context.watch();

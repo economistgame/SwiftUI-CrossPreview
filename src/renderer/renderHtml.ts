@@ -496,7 +496,9 @@ function renderNode(node: ViewNode): string {
             break;
             
         case 'Image':
-            baseHtml = `<div class="image-placeholder"${style}>${escapeHtml(node.props.name ?? 'Image')}</div>`;
+            baseHtml = node.props.systemName
+                ? `<span class="sf-symbol" title="${escapeHtml(node.props.name ?? '')}"${style}>◆</span>`
+                : `<div class="image-placeholder"${style}>${escapeHtml(node.props.name ?? 'Image')}</div>`;
             break;
             
         case 'Spacer':
@@ -525,8 +527,15 @@ function renderNode(node: ViewNode): string {
             break;
             
         case 'Button':
-            const buttonLabel = node.children.map(renderNode).join('');
-            baseHtml = `<button class="button"${style}>${buttonLabel || 'Button'}</button>`;
+            const buttonLabel = node.children.map(renderNode).join('') || 'Button';
+            const destructive = node.props.role === 'destructive' ? ' destructive' : '';
+            if (node.props.style === 'plain') {
+                baseHtml = `<div class="button-plain"${style}>${buttonLabel}</div>`;
+            } else if (node.props.style === 'row') {
+                baseHtml = `<div class="button-row${destructive}"${style}>${buttonLabel}</div>`;
+            } else {
+                baseHtml = `<button class="button${destructive}"${style}>${buttonLabel}</button>`;
+            }
             break;
             
         case 'Toggle':
@@ -740,6 +749,11 @@ function renderNode(node: ViewNode): string {
             </details>`;
             break;
             
+        case 'Custom': {
+            const customText = node.props.text ? `<div class="custom-view-text">${escapeHtml(node.props.text)}</div>` : '';
+            baseHtml = `<div class="custom-view"${style}><span class="custom-view-name">${escapeHtml(node.props.name ?? 'View')}</span>${customText}${node.children.map(renderNode).join('')}</div>`;
+            break;
+        }
         default:
             baseHtml = `<div class="custom"${style}>${escapeHtml(node.kind)}</div>`;
     }

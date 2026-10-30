@@ -2,6 +2,21 @@
 
 All notable changes to the SwiftUI CrossPreview extension will be documented in this file.
 
+## [1.5.0] - 2026-10-30
+
+### Changed
+- **Parser tree-sitter en WebAssembly** – Se sustituyen los módulos nativos (`tree-sitter`, `tree-sitter-swift`) por `web-tree-sitter` + gramática Swift en WASM, incluidos en el VSIX. Funciona en Windows, macOS y Linux sin compilar nada. El parser regex queda como respaldo.
+- **Nuevo parser de vistas** (`src/parser/treeSitterParser.ts`) pensado para código real:
+  - `let`/`var` locales dentro de `body`.
+  - `if` / `else if` / `else`, `switch` y `a ? b : c`, eligiendo la rama según los valores iniciales conocidos (`@State`, `@Published`, valores por defecto, argumentos).
+  - Funciones auxiliares (`func campo(...) -> some View`), propiedades computadas de vista y vistas `View` del mismo archivo se expanden con sus argumentos.
+  - Vistas de otros archivos se muestran como marcador con su nombre y texto.
+  - `Section("Título")`, `Toggle`/`DisclosureGroup`/`Button`/`NavigationLink` con `label:`, `Picker` con `ForEach`, `.navigationTitle`, `.tabItem`, `.badge`, `.overlay`, interpolación de strings y más.
+
+### Added
+- Botones con `.buttonStyle(.plain)`, botones como fila dentro de `Form`/`List` y `role: .destructive`.
+- `Image(systemName:)` se dibuja como icono en lugar de un recuadro con el nombre.
+
 ## [1.4.13] - 2026-10-30
 
 ### Added

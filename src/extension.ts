@@ -3,7 +3,7 @@
 // and forward it to renderer/ to produce HTML for the webview.
 
 import * as vscode from 'vscode';
-import { parseSwiftToViewTree } from './parser/swiftParser';
+import { parseSwiftToViewTree, initTreeSitter } from './parser/swiftParser';
 import { renderToHtml, renderErrorBanner } from './renderer/renderHtml';
 
 let currentPanel: vscode.WebviewPanel | undefined = undefined;
@@ -18,14 +18,16 @@ let updateTimeout: NodeJS.Timeout | undefined = undefined;
 export function activate(context: vscode.ExtensionContext) {
     console.log('SwiftUI CrossPreview extension is now active');
     
-    // Test tree-sitter import immediately
-    try {
-        const testParse = parseSwiftToViewTree('struct Test: View { var body: some View { Text("Hello") } }');
-        console.log('Tree-sitter test successful:', testParse.root ? 'OK' : 'Failed');
-    } catch (error) {
-        console.error('Tree-sitter initialization failed:', error);
-        vscode.window.showErrorMessage(`SwiftUI CrossPreview: Failed to initialize parser - ${error}`);
-    }
+    // Load the tree-sitter Swift parser (WebAssembly, shipped in dist/).
+    // Until it is ready the regex fallback parser is used; once loaded,
+    // refresh an already open preview so it uses the full parser.
+    initTreeSitter(vscode.Uri.joinPath(context.extensionUri, 'dist').fsPath).then(ready => {
+        console.log(`SwiftUI CrossPreview parser: ${ready ? 'tree-sitter (WASM)' : 'regex fallback'}`);
+        if (ready && currentPanel && currentDocumentUri) {
+            const doc = vscode.workspace.textDocuments.find(d => d.uri.toString() === currentDocumentUri!.toString());
+            if (doc) updatePreviewFromDocument(doc, currentPanel);
+        }
+    });
 
     // Register command to open preview
     const disposable = vscode.commands.registerCommand(
@@ -605,6 +607,42 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
         
         .button:hover {
           background: #0051d5;
+        }
+
+        .button.destructive {
+          background: #ff3b30;
+        }
+
+        .button-plain {
+          cursor: pointer;
+          text-align: left;
+        }
+
+        .button-row {
+          color: #007aff;
+          padding: 6px 0;
+          cursor: pointer;
+          text-align: left;
+        }
+
+        .button-row.destructive {
+          color: #ff3b30;
+        }
+
+        .button-row .text,
+        .button-row .sf-symbol {
+          color: inherit;
+        }
+
+        .sf-symbol {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-width: 1.2em;
+          font-size: 15px;
+          line-height: 1.2;
+          color: #007aff;
+          flex-shrink: 0;
         }
         
         .toggle {
@@ -1195,6 +1233,23 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
           border-color: #007aff;
         }
         
+        .custom-view {
+            border: 1px dashed rgba(128,128,128,0.5);
+            border-radius: 8px;
+            padding: 6px 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        .custom-view-name {
+            font-size: 10px;
+            opacity: 0.6;
+            font-family: ui-monospace, Menlo, monospace;
+        }
+        .custom-view-text {
+            font-size: 12px;
+            opacity: 0.8;
+        }
         .disclosure-group {
           background: #ffffff;
           border-radius: 8px;
@@ -1847,7 +1902,11 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                             baseHtml = '<div class="' + addClass('text') + '"' + style + '>' + escapeHtml(n.props.text || '') + '</div>';
                             break;
                         case 'Image':
-                            baseHtml = '<div class="' + addClass('image-placeholder') + '"' + style + '>' + escapeHtml(n.props.name || 'Image') + '</div>';
+                            if (n.props.systemName) {
+                                baseHtml = '<span class="' + addClass('sf-symbol') + '" title="' + escapeHtml(n.props.name || '') + '"' + style + '>' + sfSymbolGlyph(n.props.name) + '</span>';
+                            } else {
+                                baseHtml = '<div class="' + addClass('image-placeholder') + '"' + style + '>' + escapeHtml(n.props.name || 'Image') + '</div>';
+                            }
                             break;
                         case 'Spacer':
                             baseHtml = '<div class="' + addClass('spacer') + '"' + style + '></div>';
@@ -1869,8 +1928,15 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                             baseHtml = renderForEach(n);
                             break;
                         case 'Button':
-                            var buttonLabel = n.children.map(renderNode).join('');
-                            baseHtml = '<button class="' + addClass('button') + '"' + style + '>' + (buttonLabel || 'Button') + '</button>';
+                            var buttonLabel = n.children.map(renderNode).join('') || 'Button';
+                            var destructive = n.props.role === 'destructive' ? ' destructive' : '';
+                            if (n.props.style === 'plain') {
+                                baseHtml = '<div class="' + addClass('button-plain') + '"' + style + '>' + buttonLabel + '</div>';
+                            } else if (n.props.style === 'row') {
+                                baseHtml = '<div class="' + addClass('button-row' + destructive) + '"' + style + '>' + buttonLabel + '</div>';
+                            } else {
+                                baseHtml = '<button class="' + addClass('button' + destructive) + '"' + style + '>' + buttonLabel + '</button>';
+                            }
                             break;
                         case 'Toggle':
                             var toggleLabel = n.props.label || 'Toggle';
@@ -2040,6 +2106,15 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                                 '<summary class="disclosure-label">' + escapeHtml(disclosureLabel) + '</summary>' +
                                 '<div class="disclosure-content">' + disclosureContent + '</div></details>';
                             break;
+                        case 'Custom':
+                            // View defined in another file: labelled placeholder
+                            var customName = n.props.name || 'View';
+                            var customText = n.props.text ? '<div class="custom-view-text">' + escapeHtml(n.props.text) + '</div>' : '';
+                            var customChildren = n.children.map(renderNode).join('');
+                            baseHtml = '<div class="custom-view"' + style + '>' +
+                                '<span class="custom-view-name">' + escapeHtml(customName) + '</span>' +
+                                customText + customChildren + '</div>';
+                            break;
                         default:
                             baseHtml = '<div class="custom"' + style + '>' + escapeHtml(n.kind) + '</div>';
                     }
@@ -2140,6 +2215,30 @@ function getPreviewHtml(webview: vscode.Webview, context: vscode.ExtensionContex
                     return baseHtml;
                 }
                 
+                function sfSymbolGlyph(name) {
+                    var base = String(name || '').replace(/\.(fill|circle|square|slash|badge.*)$/g, '');
+                    var map = {
+                        'star': '★', 'heart': '♥', 'checkmark': '✓', 'xmark': '✕', 'plus': '+', 'minus': '−',
+                        'chevron.right': '›', 'chevron.left': '‹', 'chevron.up': '˄', 'chevron.down': '˅',
+                        'arrow.right': '→', 'arrow.left': '←', 'arrow.up': '↑', 'arrow.down': '↓',
+                        'gear': '⚙', 'gearshape': '⚙', 'house': '⌂', 'magnifyingglass': '⌕', 'trash': '🗑',
+                        'bell': '🔔', 'envelope': '✉', 'phone': '✆', 'person': '👤', 'person.crop': '👤',
+                        'car': '🚗', 'radio': '📻', 'play': '▶', 'pause': '⏸', 'stop': '■', 'info': 'ⓘ',
+                        'exclamationmark.triangle': '⚠', 'questionmark': '?', 'lock': '🔒', 'globe': '🌐',
+                        'wifi': '📶', 'bolt': '⚡', 'sun.max': '☀', 'moon': '☾', 'cloud': '☁', 'flag': '⚑',
+                        'bookmark': '🔖', 'square.and.arrow.up': '⇪', 'pencil': '✎', 'folder': '📁', 'doc': '📄',
+                        'photo': '🖼', 'camera': '📷', 'music.note': '♪', 'mappin': '📍', 'location': '➤',
+                        'clock': '🕒', 'calendar': '📅', 'cart': '🛒', 'bag': '👜', 'message': '💬',
+                        'antenna.radiowaves.left.and.right': '📡', 'speaker.wave.2': '🔊', 'circle': '○'
+                    };
+                    if (/^largecircle\.fill\.circle$/.test(name)) return '◉';
+                    if (/^circle(\.fill)?$/.test(name)) return /fill/.test(name) ? '●' : '○';
+                    if (/^checkmark\.circle/.test(name)) return '✓';
+                    if (/^xmark\.circle/.test(name)) return '✕';
+                    return map[name] || map[base] || map[String(name).split('.')[0]] || '◆';
+                }
+                
+
                 function renderForEach(n) {
                     if (!n.props.rowTemplate) {
                         return '<div class="foreach"></div>';
