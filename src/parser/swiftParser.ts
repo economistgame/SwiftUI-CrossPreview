@@ -2006,6 +2006,266 @@ function findStatementsInClosure(closure: any): any[] {
  * Simple regex-based fallback parser when tree-sitter is not available
  * This provides basic parsing support but won't handle complex Swift syntax
  */
+/**
+ * Control-flow support for the regex parser.
+ *
+ * A static preview cannot evaluate runtime conditions, so view-builder
+ * control flow is resolved to a representative branch:
+ *   - `switch x { case ...: A  case ...: B }`  -> A (first case)
+ *   - `if c { A } else if d { B } else { C }`  -> A (first branch)
+ * Branches with several views are wrapped in a VStack. Works recursively
+ * and ignores keywords inside string literals.
+ */
+
+/** Index just past the brace that closes the one at `openIndex` (string-aware). */
+function matchBrace(content: string, openIndex: number): number {
+    let depth = 0;
+    let inString = false;
+    for (let i = openIndex; i < content.length; i++) {
+        const ch = content[i];
+        if (inString) {
+            if (ch === '\\') { i++; continue; }
+            if (ch === '"') inString = false;
+            continue;
+        }
+        if (ch === '"') { inString = true; continue; }
+        if (ch === '{') depth++;
+        else if (ch === '}') {
+            depth--;
+            if (depth === 0) return i + 1;
+        }
+    }
+    return content.length;
+}
+
+/** First `{` at index >= from that is outside strings and parentheses. */
+function findBlockOpen(content: string, from: number): number {
+    let parens = 0;
+    let inString = false;
+    for (let i = from; i < content.length; i++) {
+        const ch = content[i];
+        if (inString) {
+            if (ch === '\\') { i++; continue; }
+            if (ch === '"') inString = false;
+            continue;
+        }
+        if (ch === '"') inString = true;
+        else if (ch === '(' || ch === '[') parens++;
+        else if (ch === ')' || ch === ']') parens--;
+        else if (ch === '{' && parens <= 0) return i;
+    }
+    return -1;
+}
+
+/** Find the next `switch` / `if` keyword outside strings, at a word boundary. */
+function findControlKeyword(content: string, from: number): { index: number; keyword: 'switch' | 'if' } | null {
+    let inString = false;
+    for (let i = from; i < content.length; i++) {
+        const ch = content[i];
+        if (inString) {
+            if (ch === '\\') { i++; continue; }
+            if (ch === '"') inString = false;
+            continue;
+        }
+        if (ch === '"') { inString = true; continue; }
+        if (i > 0 && /[\w.$]/.test(content[i - 1])) continue;
+        for (const keyword of ['switch', 'if'] as const) {
+            if (content.startsWith(keyword, i) && /\s/.test(content[i + keyword.length] || '')) {
+                return { index: i, keyword };
+            }
+        }
+    }
+    return null;
+}
+
+/** Number of top-level statements (views) in a block: a new one starts on each
+ *  depth-0 line that does not begin with `.` (modifier) or `}`. */
+function countTopLevelViews(content: string): number {
+    let count = 0;
+    let depth = 0;
+    let inString = false;
+    let lineStart = true;
+    for (let i = 0; i < content.length; i++) {
+        const ch = content[i];
+        if (inString) {
+            if (ch === '\\') { i++; continue; }
+            if (ch === '"') inString = false;
+            continue;
+        }
+        if (ch === '\n') { lineStart = true; continue; }
+        if (/\s/.test(ch)) continue;
+        if (lineStart && depth === 0 && ch !== '.' && ch !== '}' && ch !== ')') count++;
+        lineStart = false;
+        if (ch === '"') inString = true;
+        else if (ch === '{' || ch === '(' || ch === '[') depth++;
+        else if (ch === '}' || ch === ')' || ch === ']') depth--;
+    }
+    return count;
+}
+
+/** Wrap a branch in a VStack when it contains more than one view. */
+function wrapBranch(branch: string): string {
+    const trimmed = resolveControlFlow(branch).trim();
+    if (!trimmed) return '';
+    return countTopLevelViews(trimmed) <= 1 ? trimmed : `VStack {\n${trimmed}\n}`;
+}
+
+/** Initial values of properties declared in the file (name -> literal), used to pick branches. */
+let knownInitialValues: Record<string, string> = {};
+
+function collectInitialValues(source: string): Record<string, string> {
+    const values: Record<string, string> = {};
+    const re = /\b(?:var|let)\s+(\w+)\s*(?::\s*[^=\n{]+?)?\s*=\s*([^\n;]+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(source)) !== null) {
+        if (!(m[1] in values)) values[m[1]] = m[2].trim();
+    }
+    return values;
+}
+
+/** Enum member name of a value such as `.on`, `Estado.on` or `.on(3)`. */
+function enumMember(value: string): string | null {
+    const m = value.trim().match(/^(?:[A-Z]\w*)?\.(\w+)/);
+    return m ? m[1] : null;
+}
+
+/** Initial value for a switch/if subject like `estado`, `self.estado` or `radio.estado`. */
+function lookupSubject(subject: string): string | null {
+    const m = subject.trim().match(/(\w+)\s*$/);
+    if (!m) return null;
+    return knownInitialValues[m[1]] ?? null;
+}
+
+/** Split a switch block into its `case`/`default` clauses. */
+function switchCases(inner: string): Array<{ label: string; body: string; isDefault: boolean }> {
+    // Locate top-level `case`/`default` labels (depth 0, outside strings)
+    const labels: number[] = [];
+    let depth = 0;
+    let inString = false;
+    for (let i = 0; i < inner.length; i++) {
+        const ch = inner[i];
+        if (inString) {
+            if (ch === '\\') { i++; continue; }
+            if (ch === '"') inString = false;
+            continue;
+        }
+        if (ch === '"') { inString = true; continue; }
+        if (ch === '{' || ch === '(' || ch === '[') depth++;
+        else if (ch === '}' || ch === ')' || ch === ']') depth--;
+        else if (depth === 0 && (i === 0 || !/[\w.$]/.test(inner[i - 1])) &&
+                 (/^case\s/.test(inner.substring(i, i + 5)) || /^default\s*:/.test(inner.substring(i, i + 12)))) {
+            labels.push(i);
+        }
+    }
+
+    const cases: Array<{ label: string; body: string; isDefault: boolean }> = [];
+    labels.forEach((start, idx) => {
+        // The label ends at the first top-level ':' after it
+        let colon = -1;
+        let d = 0;
+        for (let i = start; i < inner.length; i++) {
+            const ch = inner[i];
+            if (ch === '(' || ch === '[') d++;
+            else if (ch === ')' || ch === ']') d--;
+            else if (ch === ':' && d === 0) { colon = i; break; }
+        }
+        if (colon === -1) return;
+        const end = idx + 1 < labels.length ? labels[idx + 1] : inner.length;
+        const isDefault = inner.startsWith('default', start);
+        cases.push({
+            label: inner.substring(isDefault ? start + 7 : start + 4, colon).trim(),
+            body: inner.substring(colon + 1, end),
+            isDefault,
+        });
+    });
+    return cases;
+}
+
+/** Pick the case matching the subject's initial value, else default, else the first case. */
+function chooseSwitchCase(subject: string, inner: string): string {
+    const cases = switchCases(inner);
+    if (cases.length === 0) return '';
+    const value = lookupSubject(subject);
+    if (value !== null) {
+        const member = enumMember(value);
+        for (const c of cases) {
+            if (c.isDefault) continue;
+            const patterns = c.label.split(',').map(p => p.trim());
+            const hit = patterns.some(p => {
+                if (member) return enumMember(p.replace(/^let\s+|^var\s+/, '')) === member;
+                return p === value;
+            });
+            if (hit) return c.body;
+        }
+        const def = cases.find(c => c.isDefault);
+        if (def) return def.body;
+    }
+    return cases[0].body;
+}
+
+/** Evaluate a simple condition (`flag`, `!flag`, `a.flag`) from known Bool initial values. */
+function evaluateCondition(condition: string): boolean | null {
+    const m = condition.trim().match(/^(!?)\s*([\w.]+)$/);
+    if (!m) return null;
+    const value = lookupSubject(m[2]);
+    if (value !== 'true' && value !== 'false') return null;
+    return (value === 'true') !== (m[1] === '!');
+}
+
+function resolveControlFlow(content: string): string {
+    let result = '';
+    let pos = 0;
+
+    while (pos < content.length) {
+        const found = findControlKeyword(content, pos);
+        if (!found) break;
+
+        const condStart = found.index + found.keyword.length;
+        const open = findBlockOpen(content, condStart);
+        if (open === -1) break;
+        let close = matchBrace(content, open);
+        const condition = content.substring(condStart, open);
+        const inner = content.substring(open + 1, close - 1);
+
+        let replacement: string;
+        if (found.keyword === 'switch') {
+            replacement = wrapBranch(chooseSwitchCase(condition, inner));
+        } else {
+            // Collect the if / else-if / else branches
+            const branches: Array<{ condition: string | null; body: string }> = [{ condition, body: inner }];
+            while (true) {
+                const elseMatch = content.substring(close).match(/^\s*else\b(\s*if\b)?/);
+                if (!elseMatch) break;
+                const afterElse = close + elseMatch[0].length;
+                const elseOpen = findBlockOpen(content, afterElse);
+                if (elseOpen === -1) break;
+                const elseClose = matchBrace(content, elseOpen);
+                branches.push({
+                    condition: elseMatch[1] ? content.substring(afterElse, elseOpen) : null,
+                    body: content.substring(elseOpen + 1, elseClose - 1),
+                });
+                close = elseClose;
+            }
+
+            // Take the first branch whose condition is known to be true; when a
+            // condition cannot be evaluated, show that branch.
+            let chosen: string | null = null;
+            for (const b of branches) {
+                const v = b.condition === null ? true : evaluateCondition(b.condition);
+                if (v === false) continue;
+                chosen = b.body;
+                break;
+            }
+            replacement = chosen === null ? '' : wrapBranch(chosen);
+        }
+
+        result += content.substring(pos, found.index) + replacement;
+        pos = close;
+    }
+
+    return result + content.substring(pos);
+}
+
 function parseWithRegex(source: string): ParseResult {
     const errors: string[] = [];
     
@@ -2036,8 +2296,12 @@ function parseWithRegex(source: string): ParseResult {
             closeBraceIndex++;
         }
         
-        const bodyContent = source.substring(openBraceIndex + 1, closeBraceIndex - 1).trim();
-        
+        // Resolve switch / if-else so the regex parser only sees views
+        knownInitialValues = collectInitialValues(source);
+        const bodyContent = resolveControlFlow(
+            source.substring(openBraceIndex + 1, closeBraceIndex - 1)
+        ).trim();
+
         // Parse the main view (VStack, HStack, etc.)
         const root = parseRegexView(bodyContent);
         
@@ -2344,6 +2608,8 @@ function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStac
     // Parse child views (Text, ForEach, Section, etc.)
     let pos = 0;
     while (pos < innerContent.length) {
+        // Skip leading whitespace so offsets computed on `remaining` match `pos`
+        while (pos < innerContent.length && /\s/.test(innerContent[pos])) pos++;
         const remaining = innerContent.substring(pos).trim();
         if (!remaining) break;
         
@@ -2829,8 +3095,8 @@ function parseRegexContainer(content: string, kind: "VStack" | "HStack" | "ZStac
                 children.push({ kind: 'RoundedRectangle', props: { cornerRadius }, modifiers, children: [] });
                 pos += currentPos;
             }
-        } else if (remaining.match(/^Image\("/)) {
-            const imgMatch = remaining.match(/^Image\("([^"]+)"\)/);
+        } else if (remaining.match(/^Image\((systemName:\s*)?"/)) {
+            const imgMatch = remaining.match(/^Image\((?:systemName:\s*)?"([^"]+)"\)/);
             if (imgMatch) {
                 children.push({ kind: 'Image', props: { name: imgMatch[1] }, modifiers: [], children: [] });
                 pos += skipModifiers(remaining, imgMatch[0].length);

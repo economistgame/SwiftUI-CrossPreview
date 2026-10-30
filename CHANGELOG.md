@@ -2,6 +2,17 @@
 
 All notable changes to the SwiftUI CrossPreview extension will be documented in this file.
 
+## [1.4.13] - 2026-10-30
+
+### Added
+- **`switch` y `if/else` en `body`** – El parser de respaldo resuelve el control de flujo: muestra el `case` (o la rama del `if`) que corresponde al valor inicial declarado de la variable (`@State`, `@Published`, `var`…). Si no puede deducirlo, usa el primer `case` o la primera rama.
+- **`Image(systemName:)`** en el parser de respaldo.
+
+### Fixed
+- Vistas duplicadas en el preview cuando la indentación era mayor que la longitud de la vista (p. ej. `NavigationLink` repetidos).
+- Error "Could not parse body content" cuando el `body` empezaba con `switch` o `if`.
+- Compilación en CI: `npm ci --ignore-scripts` para no compilar los módulos nativos de tree-sitter.
+
 ## [1.3.0] - 2025-01-XX
 
 ### Added - Navigation & App Structure
